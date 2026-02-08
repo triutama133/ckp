@@ -1,0 +1,22 @@
+# Flutter/Dart related
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.flutter-plugins
+
+# Android
+**/android/**/local.properties
+**/android/**/build/
+**/android/**/app/**/build/
+
+# iOS
+**/ios/**/Pods/
+**/ios/**/Runner.xcworkspace/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store

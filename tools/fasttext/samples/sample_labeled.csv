@@ -1,0 +1,8 @@
+label,text
+create,Transfer 50000 to tabungan
+create,Setor 100000 ke rekening tabungan
+delete,Hapus 2 pesan terakhir
+summary,Tampilkan ringkasan bulan ini
+create,Bayar listrik 200000
+delete,Hapus transaksi 3
+summary,Show me this month's totals

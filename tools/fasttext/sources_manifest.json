@@ -1,0 +1,224 @@
+{
+  "global": {
+    "exclude_if_contains": [
+      "laporan",
+      "peraturan",
+      "statistik",
+      "kebijakan",
+      "policy",
+      "annual report",
+      "press release"
+    ],
+    "prefer_keywords": [
+  "tips",
+  "cara",
+  "budget",
+  "anggaran",
+  "menabung",
+  "keluarga",
+  "rumah tangga",
+  "uang saku",
+  "biaya sekolah",
+  "tabungan keluarga",
+  "personal finance",
+  "budgeting",
+  "saving",
+  "financial planning",
+  "personal finansial",
+  "finansial keluarga",
+  "manajemen finansial",
+  "manajemen finansial keluarga",
+  "personal financial management",
+  "family financial management"
+    ],
+    "prefer_language": [
+      "id",
+      "en"
+    ],
+    "politeness_seconds": 1
+  },
+  "sites": [
+    {
+      "source": "Cermati - Artikel",
+      "url": "https://www.cermati.com/artikel",
+      "article_selector": "article, .post-content, .article-body",
+      "limit": 150,
+      "type": "consumer"
+    },
+    {
+      "source": "Finansialku - Artikel",
+      "url": "https://www.finansialku.com/artikel/",
+      "article_selector": "article, .entry-content, .post",
+      "limit": 150,
+      "type": "consumer"
+    },
+    {
+      "source": "Kontan - Keuangan",
+      "url": "https://keuangan.kontan.co.id/",
+      "article_selector": "article, .list-news a, .content",
+      "limit": 100,
+      "type": "consumer"
+    },
+    {
+      "source": "Investopedia - Personal Finance",
+      "url": "https://www.investopedia.com/personal-finance-4427760",
+      "article_selector": "article, .comp, .content",
+      "limit": 100,
+      "type": "consumer"
+    },
+    {
+      "source": "Detik - Finansial",
+      "url": "https://finance.detik.com/",
+      "article_selector": "article, .detail_text, .content",
+      "limit": 80,
+      "type": "consumer"
+    },
+    {
+      "source": "Kompas - Uang",
+      "url": "https://www.kompas.com/tag/uang",
+      "article_selector": "article, .read__content, .content",
+      "limit": 80,
+      "type": "consumer"
+    },
+    {
+      "source": "Liputan6 - Uang",
+      "url": "https://www.liputan6.com/tag/uang",
+      "article_selector": "article, .article-content, .content",
+      "limit": 80,
+      "type": "consumer"
+    },
+    {
+      "source": "MoneySmart ID - Articles",
+      "url": "https://www.moneysmart.id/",
+      "article_selector": "article, .post, .entry-content",
+      "limit": 80,
+      "type": "consumer"
+    },
+    {
+      "source": "NerdWallet - Personal Finance",
+      "url": "https://www.nerdwallet.com/article/personal-finance",
+      "article_selector": "article, .article-body, .content",
+      "limit": 80,
+      "type": "consumer"
+    },
+    {
+      "source": "World Bank - Indonesia",
+      "url": "https://www.worldbank.org/en/country/indonesia",
+      "article_selector": ".content, article",
+      "limit": 5,
+      "type": "regulator"
+    },
+    {
+      "source": "OJK - Literasi Keuangan",
+      "url": "https://www.ojk.go.id/id/edukasi-dan-literasi/Pages/Literasi-Keuangan.aspx",
+      "article_selector": "article, .content, .post",
+      "limit": 10,
+      "type": "regulator"
+    },
+    {
+      "source": "Bank Indonesia - Edukasi",
+      "url": "https://www.bi.go.id/id/edukasi/Pages/default.aspx",
+      "article_selector": "article, .content",
+      "limit": 10,
+      "type": "regulator"
+    },
+    {
+      "source": "BPS - Statistik (keuangan rumah tangga)",
+      "url": "https://www.bps.go.id/",
+      "article_selector": null,
+      "limit": 5,
+      "type": "regulator"
+    },
+    {
+      "source": "Lifepal - Personal Finance (ID)",
+      "url": "https://lifepal.co.id/blog/tema/keuangan/",
+      "article_selector": "article, .post, .entry-content",
+      "limit": 50,
+      "type": "consumer"
+    },
+    {
+      "source": "CekAja - Tips Keuangan",
+      "url": "https://www.cekaja.com/info/",
+      "article_selector": "article, .post, .entry-content",
+      "limit": 40,
+      "type": "consumer"
+    },
+    {
+      "source": "BCA - Edukasi Keuangan",
+      "url": "https://www.bca.co.id/",
+      "article_selector": null,
+      "limit": 10,
+      "type": "consumer"
+    },
+    {
+      "source": "The Balance - Personal Finance",
+      "url": "https://www.thebalance.com/personal-finance-4074017",
+      "article_selector": "article, .comp, .content",
+      "limit": 80,
+      "type": "consumer"
+    },
+    {
+      "source": "Bankrate - Personal Finance",
+      "url": "https://www.bankrate.com/personal-finance/",
+      "article_selector": "article, .content",
+      "limit": 60,
+      "type": "consumer"
+    },
+    {
+      "source": "Kiplinger - Personal Finance",
+      "url": "https://www.kiplinger.com/personal-finance",
+      "article_selector": "article, .entry, .content",
+      "limit": 60,
+      "type": "consumer"
+    },
+    {
+      "source": "CNBC - Personal Finance",
+      "url": "https://www.cnbc.com/personal-finance/",
+      "article_selector": "article, .ArticleBody-articleBody, .content",
+      "limit": 60,
+      "type": "consumer"
+    },
+    {
+      "source": "Prudential - Personal Finance",
+      "url": "https://www.prudential.co.id/id/pulse/article/personal-finance/",
+      "article_selector": "article, .post-content, .content",
+      "limit": 40,
+      "type": "consumer"
+    },
+    {
+      "source": "Pluang - Personal Finance Glossary",
+      "url": "https://pluang.com/blog/glossary/personal-finance-adalah",
+      "article_selector": "article, .post, .entry-content",
+      "limit": 30,
+      "type": "consumer"
+    },
+    {
+      "source": "ResearchGate - Manajemen Keuangan Keluarga (paper)",
+      "url": "https://www.researchgate.net/publication/323876505_MANAJEMEN_KEUANGAN_KELUARGA",
+      "article_selector": null,
+      "limit": 5,
+      "type": "academic"
+    },
+    {
+      "source": "UGM - Perencanaan Keuangan Keluarga (PDF)",
+      "url": "https://kknsaburaijua.wg.ugm.ac.id/wp-content/uploads/sites/1347/2020/08/Perencanaan-Keuangan-Keluarga.pdf",
+      "article_selector": null,
+      "limit": 5,
+      "type": "academic"
+    },
+    {
+      "source": "Unika Journal - article pdf",
+      "url": "https://journal.unika.ac.id/index.php/patria/article/download/13140/pdf",
+      "article_selector": null,
+      "limit": 5,
+      "type": "academic"
+    },
+    {
+      "source": "STIE MCE Journal - article pdf",
+      "url": "https://journal.stie-mce.ac.id/index.php/jam/article/download/1340/473/",
+      "article_selector": null,
+      "limit": 5,
+      "type": "academic"
+    }
+  ]
+}

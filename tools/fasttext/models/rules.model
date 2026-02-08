@@ -1,0 +1,3 @@
+create	tabungan,transfer,50000,to,setor,100000,ke,rekening,bayar,listrik,200000
+delete	hapus,2,pesan,terakhir,transaksi,3
+summary	tampilkan,ringkasan,bulan,ini,show,me,this,month,s,totals
