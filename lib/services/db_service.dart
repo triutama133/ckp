@@ -124,9 +124,10 @@ class Category {
   final String name;
   final String type; // 'income'|'expense'|'saving'|'investment'
   final String keywords; // comma-separated keywords
+  final String? accountId; // Optional: link category to specific account/wallet (null = global)
   final DateTime createdAt;
 
-  Category({required this.id, required this.name, required this.type, this.keywords = '', required this.createdAt});
+  Category({required this.id, required this.name, required this.type, this.keywords = '', this.accountId, required this.createdAt});
 
   Map<String, Object?> toMap() {
     return {
@@ -134,6 +135,7 @@ class Category {
       'name': name,
       'type': type,
       'keywords': keywords,
+      'accountId': accountId,
       'createdAt': createdAt.millisecondsSinceEpoch,
     };
   }
@@ -144,6 +146,7 @@ class Category {
       name: m['name'] as String,
       type: m['type'] as String,
       keywords: (m['keywords'] as String?) ?? '',
+      accountId: m['accountId'] as String?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
     );
   }
@@ -632,7 +635,7 @@ class DBService {
 
     return openDatabase(
       path,
-      version: 18,
+      version: 19,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
@@ -1145,6 +1148,10 @@ class DBService {
           try { await db.execute("ALTER TABLE gold_transactions ADD COLUMN scope TEXT DEFAULT 'personal'"); } catch (_) {}
           try { await db.execute("ALTER TABLE gold_transactions ADD COLUMN groupId TEXT"); } catch (_) {}
         }
+        if (oldVersion < 19) {
+          // Add accountId column to categories for wallet-specific categories
+          try { await db.execute("ALTER TABLE categories ADD COLUMN accountId TEXT"); } catch (_) {}
+        }
        },
         onOpen: (db) async {
           // ensure builtin categories exist (idempotent)
@@ -1415,9 +1422,23 @@ class DBService {
   }
 
   // Category CRUD
-  Future<List<Category>> getCategories() async {
+  Future<List<Category>> getCategories({String? accountId}) async {
     final db = await database;
-    final maps = await db.query('categories', orderBy: 'name ASC');
+    String whereClause = '';
+    List<dynamic> whereArgs = [];
+    
+    if (accountId != null) {
+      // Get categories for specific account OR global categories (accountId IS NULL)
+      whereClause = '(accountId = ? OR accountId IS NULL)';
+      whereArgs = [accountId];
+    }
+    
+    final maps = await db.query(
+      'categories', 
+      where: whereClause.isNotEmpty ? whereClause : null,
+      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      orderBy: 'name ASC'
+    );
     return maps.map((m) => Category.fromMap(m)).toList();
   }
 

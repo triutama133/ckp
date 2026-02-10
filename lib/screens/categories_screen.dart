@@ -6,7 +6,10 @@ import 'package:catatan_keuangan_pintar/services/parser_service.dart';
 import 'package:catatan_keuangan_pintar/services/fasttext_service.dart';
 import 'package:catatan_keuangan_pintar/services/builtin_categories.dart';
 class CategoriesScreen extends StatefulWidget {
-  const CategoriesScreen({super.key});
+  final String? accountId;
+  final String? accountName;
+  
+  const CategoriesScreen({super.key, this.accountId, this.accountName});
 
   @override
   State<CategoriesScreen> createState() => _CategoriesScreenState();
@@ -25,10 +28,81 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     _searchCtrl.addListener(() {
       setState(() => _query = _searchCtrl.text.trim().toLowerCase());
     });
+    
+    // Show first-time setup dialog if no categories exist for this account
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndShowSetupDialog());
+  }
+
+  Future<void> _checkAndShowSetupDialog() async {
+    if (widget.accountId == null) return; // Only for account-specific view
+    
+    final accountCategories = await DBService.instance.getCategories(accountId: widget.accountId);
+    final hasAccountSpecificCategories = accountCategories.any((c) => c.accountId == widget.accountId);
+    
+    if (!hasAccountSpecificCategories) {
+      if (mounted) {
+        _showFirstTimeSetupDialog();
+      }
+    }
+  }
+
+  Future<void> _showFirstTimeSetupDialog() async {
+    final result = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Atur Kategori'),
+        content: Text(
+          widget.accountName != null
+              ? 'Belum ada kategori untuk ${widget.accountName}. Apakah Anda ingin membuat kategori otomatis atau membuat sendiri?'
+              : 'Belum ada kategori untuk akun ini. Apakah Anda ingin membuat kategori otomatis atau membuat sendiri?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop('manual'),
+            child: const Text('Buat Sendiri'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop('auto'),
+            child: const Text('Buat Otomatis'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == 'auto' && widget.accountId != null) {
+      await _autoCreateCategories(widget.accountId!);
+      _load();
+    }
+  }
+
+  Future<void> _autoCreateCategories(String accountId) async {
+    // Create basic categories for the account
+    final now = DateTime.now();
+    final basicCategories = [
+      Category(id: '${_uuid.v4()}', name: 'Belanja', type: 'expense', keywords: 'belanja,groceries,supermarket', accountId: accountId, createdAt: now),
+      Category(id: '${_uuid.v4()}', name: 'Transportasi', type: 'expense', keywords: 'transport,ojek,bensin,parkir', accountId: accountId, createdAt: now),
+      Category(id: '${_uuid.v4()}', name: 'Makan & Minum', type: 'expense', keywords: 'makan,minum,restoran,kafe', accountId: accountId, createdAt: now),
+      Category(id: '${_uuid.v4()}', name: 'Gaji', type: 'income', keywords: 'gaji,salary,tunjangan', accountId: accountId, createdAt: now),
+      Category(id: '${_uuid.v4()}', name: 'Bonus', type: 'income', keywords: 'bonus,insentif,komisi', accountId: accountId, createdAt: now),
+      Category(id: '${_uuid.v4()}', name: 'Tabungan', type: 'saving', keywords: 'tabung,tabungan,simpan', accountId: accountId, createdAt: now),
+    ];
+    
+    for (final cat in basicCategories) {
+      await DBService.instance.insertCategory(cat);
+    }
+    
+    await ParserService.instance.reloadCustomCategories();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Kategori otomatis berhasil dibuat')),
+      );
+    }
   }
 
   Future<void> _load() async {
-    final rows = await DBService.instance.getCategories();
+    final rows = await DBService.instance.getCategories(accountId: widget.accountId);
     if (rows.isEmpty) {
       // seed defaults when DB has no categories (upgrade path may have created table without seeds)
       await DBService.instance.insertCategory(Category(id: 'c_groceries', name: 'Groceries', type: 'expense', keywords: 'belanja,groceries,sebako', createdAt: DateTime.now()));
@@ -36,7 +110,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       await DBService.instance.insertCategory(Category(id: 'c_saving', name: 'Tabungan', type: 'saving', keywords: 'tabungan,tabung,simpan', createdAt: DateTime.now()));
       await DBService.instance.insertCategory(Category(id: 'c_invest', name: 'Investasi', type: 'investment', keywords: 'investasi,saham,reksadana', createdAt: DateTime.now()));
       await ParserService.instance.reloadCustomCategories();
-      final refreshed = await DBService.instance.getCategories();
+      final refreshed = await DBService.instance.getCategories(accountId: widget.accountId);
       setState(() => _cats = refreshed);
       return;
     }
@@ -256,7 +330,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                           child: ElevatedButton(
                             onPressed: () async {
                               final id = c?.id ?? _uuid.v4();
-                              final cat = Category(id: id, name: nameCtrl.text.trim(), type: typeVar, keywords: kwCtrl.text.trim(), createdAt: DateTime.now());
+                              final cat = Category(
+                                id: id, 
+                                name: nameCtrl.text.trim(), 
+                                type: typeVar, 
+                                keywords: kwCtrl.text.trim(), 
+                                accountId: widget.accountId, // Link to account if viewing account-specific categories
+                                createdAt: DateTime.now(),
+                              );
                               await DBService.instance.insertCategory(cat);
                               await ParserService.instance.reloadCustomCategories();
                               Navigator.of(ctx).pop();
@@ -280,7 +361,13 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Manajemen Kategori')),
+      appBar: AppBar(
+        title: Text(
+          widget.accountName != null 
+              ? 'Kategori - ${widget.accountName}' 
+              : 'Manajemen Kategori',
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
         child: Column(
