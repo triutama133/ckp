@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:uuid/uuid.dart';
 import 'package:catatan_keuangan_pintar/services/db_service.dart';
+import 'package:catatan_keuangan_pintar/widgets/hint_widgets.dart';
 import 'package:intl/intl.dart';
 
 class GoalsScreen extends HookWidget {
@@ -337,6 +338,14 @@ class GoalsScreen extends HookWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Target Keuangan'),
+        actions: [
+          HintIcon(
+            title: 'Tentang Target Keuangan',
+            message: 'Buat target tabungan untuk tujuan tertentu seperti Haji, Umroh, Rumah, '
+                'Kendaraan, Pendidikan, atau investasi lainnya. Track progress dengan grafik visual. '
+                'Set jumlah target dan tanggal target, lalu setor secara berkala untuk mencapai goal Anda.',
+          ),
+        ],
       ),
       body: isLoading.value
           ? const Center(child: CircularProgressIndicator())

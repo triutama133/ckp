@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
 import 'package:catatan_keuangan_pintar/services/db_service.dart';
 import 'package:catatan_keuangan_pintar/services/auto_sync_service.dart';
+import 'package:catatan_keuangan_pintar/widgets/hint_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ManualTransactionScreen extends HookWidget {
@@ -212,6 +213,16 @@ class ManualTransactionScreen extends HookWidget {
         elevation: 0,
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
+        actions: [
+          HintIcon(
+            title: 'Input Transaksi Manual',
+            message: 'Gunakan form ini untuk memasukkan transaksi dengan detail lengkap. '
+                'Pilih tipe transaksi (Pengeluaran, Pemasukan, Tabungan, Investasi), '
+                'kategori, sumber dana, dan opsional link ke target/goal. '
+                'Anda juga bisa menambahkan keterangan dan memilih tanggal transaksi.',
+            icon: Icons.help_outline,
+          ),
+        ],
       ),
       body: Stack(
         children: [

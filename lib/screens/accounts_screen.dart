@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:uuid/uuid.dart';
 import 'package:catatan_keuangan_pintar/services/db_service.dart';
+import 'package:catatan_keuangan_pintar/widgets/hint_widgets.dart';
 import 'package:intl/intl.dart';
 
 class AccountsScreen extends HookWidget {
@@ -315,6 +316,14 @@ class AccountsScreen extends HookWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Akun & Sumber Dana'),
+        actions: [
+          HintIcon(
+            title: 'Tentang Akun & Sumber Dana',
+            message: 'Kelola berbagai akun keuangan Anda seperti rekening bank, kas tunai, '
+                'dompet digital, dan kartu kredit. Setiap akun memiliki saldo yang ter-track otomatis. '
+                'Anda bisa customize icon dan warna untuk setiap akun agar mudah dikenali.',
+          ),
+        ],
       ),
       body: isLoading.value
           ? const Center(child: CircularProgressIndicator())
