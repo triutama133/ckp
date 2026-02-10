@@ -356,17 +356,19 @@ class GroupMember {
   final String id;
   final String groupId;
   final String userId;
+  final String? email;
   final String role; // 'owner'|'admin'|'member'
   final String status; // 'invited'|'accepted'|'left'
   final DateTime? joinedAt;
 
-  GroupMember({required this.id, required this.groupId, required this.userId, this.role = 'member', this.status = 'invited', this.joinedAt});
+  GroupMember({required this.id, required this.groupId, required this.userId, this.email, this.role = 'member', this.status = 'invited', this.joinedAt});
 
   Map<String, Object?> toMap() {
     return {
       'id': id,
       'groupId': groupId,
       'userId': userId,
+      'email': email,
       'role': role,
       'status': status,
       'joinedAt': joinedAt?.millisecondsSinceEpoch,
@@ -378,6 +380,7 @@ class GroupMember {
       id: m['id'] as String,
       groupId: m['groupId'] as String,
       userId: m['userId'] as String,
+      email: m['email'] as String?,
       role: (m['role'] as String?) ?? 'member',
       status: (m['status'] as String?) ?? 'invited',
       joinedAt: m['joinedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['joinedAt'] as int) : null,

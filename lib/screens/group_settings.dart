@@ -452,7 +452,7 @@ class _GroupSettingsScreenState extends State<GroupSettingsScreen> {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          m.userId,
+                                          m.email ?? m.userId,
                                           style: const TextStyle(
                                             fontWeight: FontWeight.bold,
                                             fontSize: 16,

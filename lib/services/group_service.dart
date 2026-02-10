@@ -142,12 +142,20 @@ class GroupService {
         final client = Supabase.instance.client;
         final data = await client
             .from('group_members')
-            .select()
+            .select('*, users!inner(email)')
             .eq('groupId', groupId)
             .order('joinedAt', ascending: false);
         
         final rows = (data as List).cast<Map<String, dynamic>>();
-        return rows.map((m) => GroupMember.fromMap(m)).toList();
+        return rows.map((m) {
+          final userEmail = m['users'] != null && m['users'] is Map 
+              ? m['users']['email'] as String?
+              : null;
+          return GroupMember.fromMap({
+            ...m,
+            'email': userEmail,
+          });
+        }).toList();
       } catch (e) {
         throw Exception('Gagal mengambil anggota grup: $e');
       }
