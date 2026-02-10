@@ -5,6 +5,7 @@ import 'package:catatan_keuangan_pintar/services/db_service.dart';
 import 'package:catatan_keuangan_pintar/services/parser_service.dart';
 import 'package:catatan_keuangan_pintar/services/fasttext_service.dart';
 import 'package:catatan_keuangan_pintar/services/builtin_categories.dart';
+import 'package:catatan_keuangan_pintar/widgets/hint_widgets.dart';
 class CategoriesScreen extends StatefulWidget {
   final String? accountId;
   final String? accountName;
@@ -367,6 +368,15 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               ? 'Kategori - ${widget.accountName}' 
               : 'Manajemen Kategori',
         ),
+        actions: [
+          HintIcon(
+            title: 'Tentang Kategori',
+            message: 'Kategori membantu Anda mengorganisir transaksi. '
+                'Anda bisa membuat kategori custom atau menggunakan kategori otomatis. '
+                'Kategori dapat dibuat spesifik untuk setiap akun/dompet atau dibuat global. '
+                'Gunakan kata kunci untuk membantu sistem mengenali transaksi secara otomatis.',
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
