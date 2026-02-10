@@ -1,0 +1,196 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.accounts (
+  id text NOT NULL,
+  name text NOT NULL,
+  type text,
+  icon text,
+  balance numeric DEFAULT 0,
+  color text,
+  scope text DEFAULT 'personal'::text,
+  group_id text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  CONSTRAINT accounts_pkey PRIMARY KEY (id),
+  CONSTRAINT accounts_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.groups(id)
+);
+CREATE TABLE public.categories (
+  id text NOT NULL,
+  name text NOT NULL,
+  type text NOT NULL,
+  keywords text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  CONSTRAINT categories_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.device_tokens (
+  id text NOT NULL,
+  user_id text NOT NULL,
+  token text NOT NULL,
+  platform text,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT device_tokens_pkey PRIMARY KEY (id),
+  CONSTRAINT device_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.goals (
+  id text NOT NULL,
+  name text NOT NULL,
+  description text,
+  target_amount numeric,
+  current_amount numeric DEFAULT 0,
+  target_date timestamp with time zone,
+  icon text,
+  color text,
+  is_active boolean DEFAULT true,
+  scope text DEFAULT 'personal'::text,
+  group_id text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  CONSTRAINT goals_pkey PRIMARY KEY (id),
+  CONSTRAINT goals_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.groups(id)
+);
+CREATE TABLE public.gold_holdings (
+  id text NOT NULL,
+  type_id text,
+  grams numeric DEFAULT 0,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  user_id text,
+  CONSTRAINT gold_holdings_pkey PRIMARY KEY (id),
+  CONSTRAINT gold_holdings_type_id_fkey FOREIGN KEY (type_id) REFERENCES public.gold_types(id)
+);
+CREATE TABLE public.gold_transactions (
+  id text NOT NULL,
+  type_id text,
+  tx_type text,
+  mode text,
+  grams numeric,
+  price_per_gram numeric,
+  total_value numeric,
+  date timestamp with time zone,
+  note text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  user_id text,
+  CONSTRAINT gold_transactions_pkey PRIMARY KEY (id),
+  CONSTRAINT gold_transactions_type_id_fkey FOREIGN KEY (type_id) REFERENCES public.gold_types(id)
+);
+CREATE TABLE public.gold_types (
+  id text NOT NULL,
+  name text NOT NULL,
+  price_per_gram numeric,
+  currency text DEFAULT 'IDR'::text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  user_id text,
+  CONSTRAINT gold_types_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.group_invites (
+  id text NOT NULL,
+  group_id text NOT NULL,
+  token text NOT NULL UNIQUE,
+  created_by text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  expires_at timestamp with time zone,
+  used_at timestamp with time zone,
+  CONSTRAINT group_invites_pkey PRIMARY KEY (id),
+  CONSTRAINT group_invites_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.groups(id)
+);
+CREATE TABLE public.group_members (
+  id text NOT NULL,
+  group_id text NOT NULL,
+  user_id text NOT NULL,
+  role text DEFAULT 'member'::text,
+  status text DEFAULT 'invited'::text,
+  joined_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  CONSTRAINT group_members_pkey PRIMARY KEY (id),
+  CONSTRAINT group_members_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.groups(id),
+  CONSTRAINT group_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.groups (
+  id text NOT NULL,
+  name text NOT NULL,
+  description text,
+  icon text,
+  created_by text NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  CONSTRAINT groups_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.messages (
+  id text NOT NULL,
+  group_id text,
+  user_id text,
+  text text NOT NULL,
+  is_system boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  CONSTRAINT messages_pkey PRIMARY KEY (id),
+  CONSTRAINT messages_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.groups(id),
+  CONSTRAINT messages_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.notifications (
+  id text NOT NULL,
+  user_id text NOT NULL,
+  title text NOT NULL,
+  body text NOT NULL,
+  type text,
+  data jsonb,
+  is_read boolean DEFAULT false,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT notifications_pkey PRIMARY KEY (id),
+  CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
+CREATE TABLE public.transactions (
+  id text NOT NULL,
+  message_id text,
+  amount numeric NOT NULL,
+  currency text DEFAULT 'IDR'::text,
+  category text,
+  description text,
+  date timestamp with time zone NOT NULL,
+  is_income boolean DEFAULT false,
+  type text,
+  account_id text,
+  goal_id text,
+  image_url text,
+  voice_url text,
+  scope text DEFAULT 'personal'::text,
+  group_id text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  deleted_at timestamp with time zone,
+  version integer DEFAULT 1,
+  CONSTRAINT transactions_pkey PRIMARY KEY (id),
+  CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id),
+  CONSTRAINT transactions_goal_id_fkey FOREIGN KEY (goal_id) REFERENCES public.goals(id),
+  CONSTRAINT transactions_group_id_fkey FOREIGN KEY (group_id) REFERENCES public.groups(id)
+);
+CREATE TABLE public.users (
+  id text NOT NULL,
+  email text UNIQUE,
+  full_name text,
+  avatar_url text,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT users_pkey PRIMARY KEY (id)
+);

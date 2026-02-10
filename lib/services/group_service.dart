@@ -24,6 +24,117 @@ class GroupService {
   final _rng = Random();
   Map<String, String> get _jsonHeaders => {'content-type': 'application/json'};
 
+  Future<void> inviteByEmail(
+    String groupId,
+    String createdBy,
+    String email, {
+    String? groupName,
+  }) async {
+    if (!useRemote || provider != 'supabase') {
+      throw Exception('Invite via email hanya tersedia untuk Supabase');
+    }
+
+    final client = Supabase.instance.client;
+    final normEmail = email.trim().toLowerCase();
+    if (normEmail.isEmpty) {
+      throw Exception('Email tidak boleh kosong');
+    }
+
+    final user = await client
+        .from('users')
+        .select('id,email,full_name')
+        .eq('email', normEmail)
+        .maybeSingle();
+
+    if (user == null) {
+      throw Exception('Email belum terdaftar');
+    }
+
+    final userId = user['id']?.toString();
+    if (userId == null || userId.isEmpty) {
+      throw Exception('User tidak ditemukan');
+    }
+    if (userId == createdBy) {
+      throw Exception('Tidak bisa mengundang diri sendiri');
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final existing = await client
+        .from('group_members')
+        .select('id,status')
+        .eq('group_id', groupId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+    String memberId;
+    if (existing != null) {
+      memberId = existing['id']?.toString() ?? 'gm_${groupId}_$userId';
+      final status = existing['status']?.toString();
+      if (status == 'accepted') {
+        throw Exception('User sudah menjadi anggota');
+      }
+      await client.from('group_members').update({
+        'status': 'invited',
+        'role': 'member',
+        'joined_at': null,
+        'updated_at': now,
+      }).eq('id', memberId);
+    } else {
+      memberId = 'gm_${groupId}_$userId';
+      await client.from('group_members').insert({
+        'id': memberId,
+        'group_id': groupId,
+        'user_id': userId,
+        'role': 'member',
+        'status': 'invited',
+        'joined_at': null,
+        'created_at': now,
+        'updated_at': now,
+      });
+    }
+
+    String? resolvedGroupName = groupName;
+    if (resolvedGroupName == null || resolvedGroupName.isEmpty) {
+      final g = await client.from('groups').select('name').eq('id', groupId).maybeSingle();
+      resolvedGroupName = g?['name']?.toString() ?? 'Grup';
+    }
+
+    await client.from('notifications').insert({
+      'id': 'notif_${DateTime.now().millisecondsSinceEpoch}_${_rng.nextInt(999999)}',
+      'user_id': userId,
+      'title': 'Undangan Grup',
+      'body': 'Anda diundang ke grup "$resolvedGroupName"',
+      'type': 'group_invite',
+      'data': {
+        'group_id': groupId,
+        'member_id': memberId,
+        'inviter_id': createdBy,
+        'group_name': resolvedGroupName,
+      },
+      'is_read': false,
+      'created_at': now,
+    });
+  }
+
+  Future<void> respondToInvite(String memberId, {required bool accept}) async {
+    if (!useRemote || provider != 'supabase') {
+      throw Exception('Respons invite hanya tersedia untuk Supabase');
+    }
+
+    final client = Supabase.instance.client;
+    final now = DateTime.now().toIso8601String();
+
+    if (accept) {
+      await client.from('group_members').update({
+        'status': 'accepted',
+        'joined_at': now,
+        'updated_at': now,
+      }).eq('id', memberId);
+    } else {
+      await client.from('group_members').delete().eq('id', memberId);
+    }
+  }
+
   // ============ MEMBERSHIP (list/promote/remove) ============
   Future<List<GroupMember>> getMembers(String groupId) async {
     if (useRemote && provider == 'supabase') {
@@ -31,12 +142,20 @@ class GroupService {
         final client = Supabase.instance.client;
         final data = await client
             .from('group_members')
-            .select()
+            .select('*, users!inner(email)')
             .eq('groupId', groupId)
             .order('joinedAt', ascending: false);
         
         final rows = (data as List).cast<Map<String, dynamic>>();
-        return rows.map((m) => GroupMember.fromMap(m)).toList();
+        return rows.map((m) {
+          final userEmail = m['users'] != null && m['users'] is Map 
+              ? m['users']['email'] as String?
+              : null;
+          return GroupMember.fromMap({
+            ...m,
+            'email': userEmail,
+          });
+        }).toList();
       } catch (e) {
         throw Exception('Gagal mengambil anggota grup: $e');
       }

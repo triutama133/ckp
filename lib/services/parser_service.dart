@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:catatan_keuangan_pintar/services/db_service.dart';
+import 'package:catatan_keuangan_pintar/services/auth_service.dart';
 import 'package:catatan_keuangan_pintar/services/builtin_categories.dart';
 import 'package:uuid/uuid.dart';
 
@@ -12,6 +13,8 @@ class ParsedTransaction {
   final bool isIncome;
   final String type; // 'income', 'expense', 'saving'
   final String scope; // 'personal' | 'shared'
+  final String? accountId; // Account ID for the transaction
+  final String? accountName; // Account name mentioned in text
 
   ParsedTransaction({
     required this.amount,
@@ -22,6 +25,8 @@ class ParsedTransaction {
     this.isIncome = false,
     this.type = 'expense',
     this.scope = 'personal',
+    this.accountId,
+    this.accountName,
   });
 }
 
@@ -68,13 +73,33 @@ class ParserService {
 
     // create new group
     final id = const Uuid().v4();
-    final newGroup = Group(id: id, name: baseName, description: null, icon: null, createdAt: DateTime.now(), createdBy: 'auto');
+    final newGroup = Group(
+      id: id,
+      name: baseName,
+      description: null,
+      icon: null,
+      createdAt: DateTime.now(),
+      createdBy: AuthService.instance.userId,
+    );
     await DBService.instance.insertGroup(newGroup);
     return id;
   }
 
   // use BUILTIN_CATEGORIES from builtin_categories.dart
   final List<Map<String, Object>> _categoryMap = BUILTIN_CATEGORIES;
+
+  String? _matchCategoryByName(String input) {
+    final needle = input.toLowerCase().trim();
+    if (needle.isEmpty) return null;
+    for (final cat in _customCategoriesCache) {
+      if (cat.name.toLowerCase() == needle) return cat.name;
+    }
+    for (final entry in _categoryMap) {
+      final name = (entry['category'] as String).toLowerCase();
+      if (name == needle) return entry['category'] as String;
+    }
+    return null;
+  }
 
   // Enhanced merchant/brand detection for better categorization
   final Map<String, String> _merchantCategoryMap = {
@@ -121,6 +146,20 @@ class ParserService {
   // Enhanced amount parsing supporting Indonesian number format
   double? _parseAmount(String text) {
     final lower = text.toLowerCase();
+
+    // Handle quantity x price (e.g., "2x 15000", "3 x 15rb")
+    final qtyMatch = RegExp(r'(\d+)\s*[x×]\s*(\d+(?:[.,]\d+)?)(\s*(?:rb|ribu|k|jt|juta|m|miliar|milyar|b))?', caseSensitive: false).firstMatch(lower);
+    if (qtyMatch != null) {
+      final qty = int.tryParse(qtyMatch.group(1) ?? '0') ?? 0;
+      final base = double.tryParse((qtyMatch.group(2) ?? '0').replaceAll(',', '.')) ?? 0;
+      final suffix = (qtyMatch.group(3) ?? '').trim().toLowerCase();
+      double unit = base;
+      if (suffix.contains('rb') || suffix.contains('ribu') || suffix == 'k') unit = base * 1000;
+      if (suffix.contains('jt') || suffix.contains('juta') || suffix == 'm') unit = base * 1000000;
+      if (suffix.contains('miliar') || suffix.contains('milyar') || suffix == 'b') unit = base * 1000000000;
+      final total = qty * unit;
+      if (total > 0) return total;
+    }
     
     // Handle Indonesian number words (ribu, juta, miliar)
     final ribuan = RegExp(r'(\d+(?:[,\.]\d+)?)\s*(?:rb|ribu|k)', caseSensitive: false).firstMatch(lower);
@@ -152,26 +191,87 @@ class ParserService {
     return null;
   }
 
+  DateTime? _parseDate(String text) {
+    final lower = text.toLowerCase();
+    final now = DateTime.now();
+    if (lower.contains('hari ini')) return DateTime(now.year, now.month, now.day);
+    if (lower.contains('kemarin')) {
+      final d = now.subtract(const Duration(days: 1));
+      return DateTime(d.year, d.month, d.day);
+    }
+    if (lower.contains('besok')) {
+      final d = now.add(const Duration(days: 1));
+      return DateTime(d.year, d.month, d.day);
+    }
+    if (lower.contains('lusa')) {
+      final d = now.add(const Duration(days: 2));
+      return DateTime(d.year, d.month, d.day);
+    }
+
+    final numeric = RegExp(r'(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?');
+    final m = numeric.firstMatch(lower);
+    if (m != null) {
+      final d = int.tryParse(m.group(1) ?? '0') ?? 0;
+      final mo = int.tryParse(m.group(2) ?? '0') ?? 0;
+      int y = int.tryParse(m.group(3) ?? '') ?? now.year;
+      if (y < 100) y = 2000 + y;
+      if (d > 0 && mo > 0) {
+        return DateTime(y, mo, d);
+      }
+    }
+
+    final monthMap = {
+      'jan': 1, 'januari': 1,
+      'feb': 2, 'februari': 2,
+      'mar': 3, 'maret': 3,
+      'apr': 4, 'april': 4,
+      'mei': 5,
+      'jun': 6, 'juni': 6,
+      'jul': 7, 'juli': 7,
+      'agu': 8, 'agustus': 8,
+      'sep': 9, 'september': 9,
+      'okt': 10, 'oktober': 10,
+      'nov': 11, 'november': 11,
+      'des': 12, 'desember': 12,
+    };
+    final named = RegExp(r'(\d{1,2})\s+([a-z]+)\s*(\d{2,4})?');
+    final m2 = named.firstMatch(lower);
+    if (m2 != null) {
+      final d = int.tryParse(m2.group(1) ?? '0') ?? 0;
+      final mo = monthMap[m2.group(2) ?? ''];
+      int y = int.tryParse(m2.group(3) ?? '') ?? now.year;
+      if (y < 100) y = 2000 + y;
+      if (d > 0 && mo != null) {
+        return DateTime(y, mo, d);
+      }
+    }
+
+    return null;
+  }
+
   Future<ParsedTransaction?> parseText(String text) async {
     // Enhanced rule-based parsing with merchant detection and Indonesian number format
     try {
       final lower = text.toLowerCase();
+      final parsedDate = _parseDate(text);
 
       // detect income keywords
-      final incomeKeywords = ['dapat', 'terima', 'bonus', 'gaji', 'masuk', 'menerima', 'terima uang', 'gajian', 'honorarium', 'upah', 'penghasilan', 'komisi', 'dividen'];
-      final expenseKeywords = ['beli', 'bayar', 'makan', 'bensin', 'beli', 'roti', 'sembako', 'pakai', 'keluar', 'belanja', 'bayar', 'transfer', 'kirim', 'top up', 'isi ulang'];
+      final incomeKeywords = ['dapat', 'terima', 'bonus', 'gaji', 'masuk', 'menerima', 'terima uang', 'gajian', 'honorarium', 'upah', 'penghasilan', 'komisi', 'dividen', 'refund', 'cashback'];
+      final expenseKeywords = ['beli', 'bayar', 'makan', 'bensin', 'roti', 'sembako', 'pakai', 'keluar', 'belanja', 'transfer', 'kirim', 'top up', 'isi ulang', 'langganan'];
       final savingKeywords = ['tabungan', 'dana darurat', 'savings', 'tabung', 'simpan', 'setor', 'menabung'];
+      final investmentKeywords = ['investasi', 'reksadana', 'saham', 'obligasi', 'deposito'];
 
       bool likelyIncome = incomeKeywords.any((k) => lower.contains(k));
       bool likelyExpense = expenseKeywords.any((k) => lower.contains(k));
       bool likelySaving = savingKeywords.any((k) => lower.contains(k));
+      bool likelyInvestment = investmentKeywords.any((k) => lower.contains(k));
 
       // Use enhanced amount parser
       final amount = _parseAmount(text);
       if (amount != null && amount > 0) {
         // Check merchant/brand detection first
         String? foundCategory;
-        String finalType = 'expense';
+        String finalType = likelyInvestment ? 'investment' : (likelySaving ? 'saving' : 'expense');
         
         for (final entry in _merchantCategoryMap.entries) {
           if (lower.contains(entry.key)) {
@@ -184,6 +284,16 @@ class ParserService {
         // Ensure custom categories are loaded and check their keywords
         if (!_customLoaded) {
           await reloadCustomCategories();
+        }
+
+        // explicit category mention: "kategori: listrik"
+        final catHint = RegExp(r'kategori\s*[:=]?\s*([a-zA-Z\s]+)').firstMatch(lower);
+        if (catHint != null) {
+          final raw = catHint.group(1) ?? '';
+          final matched = _matchCategoryByName(raw);
+          if (matched != null) {
+            foundCategory = matched;
+          }
         }
         
         // Custom categories take precedence over merchant detection
@@ -224,6 +334,9 @@ class ParserService {
         if (usedSavingPhrases.any((p) => lower.contains(p))) {
           finalType = 'saving';
         }
+        if (investmentKeywords.any((p) => lower.contains(p))) {
+          finalType = 'investment';
+        }
 
         // detect shared/personal scope
         final sharedKeywords = ['bersama', 'patungan', 'split', 'split bill', 'share', 'barengan', 'bagi', 'bayar bersama', 'patungan dengan', 'bersama-sama', 'keluarga', 'teman', 'bersama teman'];
@@ -248,11 +361,76 @@ class ParserService {
         if (finalType == 'saving' && category == null) {
           category = 'Tabungan';
         }
+        if (finalType == 'investment' && category == null) {
+          category = 'Investasi';
+        }
+
+        // Parse account/sumber dana mentions (including savings)
+        String? accountName;
+        String? accountId;
+        final accountKeywords = ['dari', 'pakai', 'gunakan', 'lewat', 'via', 'melalui', 'dengan'];
+        for (final keyword in accountKeywords) {
+          // Try to extract account name after keyword
+          // Pattern: "keyword [account_name]"
+          final pattern = RegExp('$keyword\\s+([a-zA-Z0-9\\s]+?)(?:\\s+(?:beli|bayar|untuk|ke|\\d+)|\\s*\$)', caseSensitive: false);
+          final match = pattern.firstMatch(text);
+          if (match != null) {
+            final candidate = match.group(1)?.trim();
+            if (candidate != null && candidate.length > 2) {
+              // Check if this matches any known account (including savings)
+              final accounts = await DBService.instance.getAccountsWithSavings();
+              for (final acc in accounts) {
+                if (acc.name.toLowerCase().contains(candidate.toLowerCase()) || 
+                    candidate.toLowerCase().contains(acc.name.toLowerCase())) {
+                  accountName = acc.name;
+                  accountId = acc.id;
+                  break;
+                }
+              }
+              if (accountId == null && candidate.isNotEmpty) {
+                // Store the mentioned name even if not found in accounts
+                accountName = candidate;
+              }
+              break;
+            }
+          }
+        }
 
         // determine isIncome: prefer explicit mapping, otherwise use heuristic
-        final isIncome = finalType == 'income' ? true : (finalType == 'saving' ? false : likelyIncome && !likelyExpense);
+        final isIncome = finalType == 'income' ? true : (finalType == 'saving' || finalType == 'investment' ? false : likelyIncome && !likelyExpense);
 
-        return ParsedTransaction(amount: amount, currency: 'IDR', category: category, description: text, isIncome: isIncome, type: finalType, scope: finalScope);
+        // split bill: "patungan 3 orang" + "per orang"/"masing-masing" -> divide amount
+        final splitCountMatch = RegExp(r'(?:patungan|split)\s*(\d{1,2})\s*(?:orang|org|pax)').firstMatch(lower);
+        if (splitCountMatch != null && (lower.contains('per orang') || lower.contains('masing-masing'))) {
+          final n = int.tryParse(splitCountMatch.group(1) ?? '0') ?? 0;
+          if (n > 1) {
+            return ParsedTransaction(
+              amount: amount / n,
+              currency: 'IDR',
+              category: category,
+              description: text,
+              isIncome: isIncome,
+              type: finalType,
+              scope: finalScope,
+              date: parsedDate,
+              accountId: accountId,
+              accountName: accountName,
+            );
+          }
+        }
+
+        return ParsedTransaction(
+          amount: amount,
+          currency: 'IDR',
+          category: category,
+          description: text,
+          isIncome: isIncome,
+          type: finalType,
+          scope: finalScope,
+          date: parsedDate,
+          accountId: accountId,
+          accountName: accountName,
+        );
       }
     } catch (e) {
       // ignore parsing errors for scaffold
@@ -415,7 +593,11 @@ class ParserService {
     }
 
     // 4) parse transactions (single or batch) -- only if not explicitly asking for list/summary
-    final parts = text.split(RegExp(r'[,;\n\\/\|]|\bdan\b|\band\b', caseSensitive: false)).map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+    final parts = text
+        .split(RegExp(r'[,;\n\\/\|]|\bdan\b|\band\b|\bkemudian\b|\blalu\b|\bterus\b|\bserta\b', caseSensitive: false))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
     final parsedList = <ParsedTransaction>[];
     for (final p in parts) {
       final pParsed = await parseText(p);

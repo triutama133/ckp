@@ -26,6 +26,9 @@ class SmartNotificationService {
     );
 
     await _notifications.initialize(settings);
+    await _notifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
     _isInitialized = true;
   }
 
@@ -43,7 +46,7 @@ class SmartNotificationService {
     final saving = (monthlyStats['saving'] as num?)?.toDouble() ?? 0;
 
     // Get goals
-    final goals = await DBService.instance.getGoals(activeOnly: true);
+    final goals = await DBService.instance.getGoals(activeOnly: true, groupId: 'all');
 
     // Insight 1: Spending vs Income
     if (expense > income * 0.8) {
@@ -52,7 +55,7 @@ class SmartNotificationService {
         title: 'Pengeluaran Tinggi!',
         message: 'Pengeluaran bulan ini sudah ${(expense / income * 100).toStringAsFixed(0)}% dari pemasukan. Pertimbangkan untuk mengurangi pengeluaran.',
         priority: InsightPriority.high,
-        source: 'Berdasarkan data transaksi bulan ini',
+        source: 'Sumber: Data transaksi bulan berjalan',
       ));
     }
 
@@ -63,7 +66,7 @@ class SmartNotificationService {
         title: 'Keuangan Sehat!',
         message: 'Saldo bulan ini positif Rp ${NumberFormat('#,##0', 'id').format(income - expense)}. Pertimbangkan untuk menabung lebih.',
         priority: InsightPriority.medium,
-        source: 'Analisis pendapatan vs pengeluaran',
+        source: 'Sumber: Analisis pendapatan vs pengeluaran',
       ));
     }
 
@@ -78,7 +81,7 @@ class SmartNotificationService {
           message: 'Target "${goal.name}" sudah ${progress.toStringAsFixed(0)}%! Kurang Rp ${NumberFormat('#,##0', 'id').format(goal.targetAmount - goal.currentAmount)} lagi.',
           priority: InsightPriority.high,
           goalId: goal.id,
-          source: 'Progress target finansial Anda',
+          source: 'Sumber: Progress target finansial',
         ));
       } else if (progress < 20 && goal.targetDate != null) {
         final daysLeft = goal.targetDate!.difference(now).inDays;
@@ -90,7 +93,7 @@ class SmartNotificationService {
             message: 'Untuk mencapai target dalam ${daysLeft} hari, perlu menabung Rp ${NumberFormat('#,##0', 'id').format(monthlyNeeded)} per bulan.',
             priority: InsightPriority.medium,
             goalId: goal.id,
-            source: 'Rekomendasi berdasarkan target date',
+            source: 'Sumber: Target date & sisa target',
           ));
         }
       }
@@ -103,7 +106,7 @@ class SmartNotificationService {
         title: 'Tips Menabung',
         message: 'Cobalah menabung minimal 10% dari pemasukan (Rp ${NumberFormat('#,##0', 'id').format(income * 0.1)}) setiap bulan.',
         priority: InsightPriority.low,
-        source: 'Rekomendasi keuangan standar',
+        source: 'Sumber: Aturan tabungan 10% sederhana',
       ));
     }
 
@@ -111,20 +114,26 @@ class SmartNotificationService {
     final accounts = await DBService.instance.getAccounts();
     final totalBalance = accounts.fold<double>(0, (sum, acc) => sum + acc.balance);
     
-    // Calculate average monthly income from last 3 months
+    // Calculate average monthly salary from last 3 months
     final threeMonthsAgo = DateTime(now.year, now.month - 3, 1);
-    final lastThreeMonthsStats = await DBService.instance.getTotalsBetween(threeMonthsAgo, now);
-    final avgMonthlyIncome = ((lastThreeMonthsStats['income'] as num?)?.toDouble() ?? 0) / 3;
-    
-    final recommendedEmergencyFund = avgMonthlyIncome * 6; // 6 months of avg income
-    
-    if (totalBalance < recommendedEmergencyFund && avgMonthlyIncome > 0) {
+    final lastThreeMonthsTx = await DBService.instance.getTransactionsBetween(threeMonthsAgo, now);
+    final salaryTotal = lastThreeMonthsTx
+        .where((tx) {
+          final cat = (tx.category ?? '').toLowerCase();
+          return tx.isIncome && (cat.contains('gaji') || cat.contains('tunjangan'));
+        })
+        .fold<double>(0, (sum, tx) => sum + tx.amount);
+    final avgMonthlySalary = salaryTotal / 3;
+
+    final recommendedEmergencyFund = avgMonthlySalary * 6; // 6 months of avg salary
+
+    if (totalBalance < recommendedEmergencyFund && avgMonthlySalary > 0) {
       insights.add(SmartInsight(
         type: InsightType.warning,
         title: 'Dana Darurat',
         message: 'Dana darurat yang direkomendasikan adalah ${NumberFormat('#,##0', 'id').format(recommendedEmergencyFund)} (6x rata-rata gaji per bulan). Saat ini: ${NumberFormat('#,##0', 'id').format(totalBalance)}.',
         priority: InsightPriority.medium,
-        source: 'Berdasarkan rata-rata pemasukan 3 bulan terakhir',
+        source: 'Sumber: Rata-rata gaji 3 bulan terakhir',
       ));
     }
 
@@ -142,7 +151,7 @@ class SmartNotificationService {
           title: 'Pengeluaran Naik Signifikan',
           message: 'Pengeluaran bulan ini naik ${changePercent.toStringAsFixed(0)}% dibanding bulan lalu. Periksa kategori pengeluaran terbesar.',
           priority: InsightPriority.high,
-          source: 'Perbandingan dengan bulan sebelumnya',
+          source: 'Sumber: Perbandingan pengeluaran bulan ini vs bulan lalu',
         ));
       } else if (changePercent < -15) {
         insights.add(SmartInsight(
@@ -150,7 +159,7 @@ class SmartNotificationService {
           title: 'Pengeluaran Menurun!',
           message: 'Hebat! Pengeluaran turun ${changePercent.abs().toStringAsFixed(0)}% dibanding bulan lalu. Pertahankan!',
           priority: InsightPriority.medium,
-          source: 'Perbandingan dengan bulan sebelumnya',
+          source: 'Sumber: Perbandingan pengeluaran bulan ini vs bulan lalu',
         ));
       }
     }
@@ -171,21 +180,58 @@ class SmartNotificationService {
           title: 'Kategori Terbesar: ${topCategory.key}',
           message: 'Rp ${NumberFormat('#,##0', 'id').format(topCategory.value)} (${(topCategory.value / expense * 100).toStringAsFixed(0)}% dari total pengeluaran). Cek apakah bisa dihemat.',
           priority: InsightPriority.medium,
-          source: 'Analisis kategori pengeluaran bulan ini',
+          source: 'Sumber: Analisis kategori pengeluaran bulan ini',
         ));
       }
     }
 
     // Insight 8: Investment suggestion
-    if (totalBalance > avgMonthlyIncome * 3 && avgMonthlyIncome > 0) {
+    if (totalBalance > avgMonthlySalary * 3 && avgMonthlySalary > 0) {
       final investmentSuggestion = totalBalance * 0.2;
       insights.add(SmartInsight(
         type: InsightType.info,
         title: 'Pertimbangkan Investasi',
         message: 'Saldo Anda sudah cukup stabil. Pertimbangkan investasi sekitar Rp ${NumberFormat('#,##0', 'id').format(investmentSuggestion)} untuk pertumbuhan jangka panjang.',
         priority: InsightPriority.low,
-        source: 'Rekomendasi alokasi aset',
+        source: 'Sumber: Rekomendasi alokasi aset sederhana',
       ));
+    }
+
+    // Insight 9: Saving rate highlight
+    if (income > 0) {
+      final savingRate = ((income - expense) / income * 100).clamp(-100, 100);
+      if (savingRate >= 20) {
+        insights.add(SmartInsight(
+          type: InsightType.positive,
+          title: 'Rasio Menabung Bagus',
+          message: 'Rasio menabung bulan ini ${savingRate.toStringAsFixed(0)}%. Terus pertahankan untuk capai tujuan lebih cepat.',
+          priority: InsightPriority.medium,
+          source: 'Sumber: (Pemasukan - Pengeluaran) / Pemasukan',
+        ));
+      } else if (savingRate >= 0 && savingRate < 10) {
+        insights.add(SmartInsight(
+          type: InsightType.info,
+          title: 'Rasio Menabung Rendah',
+          message: 'Rasio menabung bulan ini ${savingRate.toStringAsFixed(0)}%. Coba sisihkan 10% agar dana darurat cepat terbentuk.',
+          priority: InsightPriority.low,
+          source: 'Sumber: (Pemasukan - Pengeluaran) / Pemasukan',
+        ));
+      }
+    }
+
+    // Insight 10: Transaction frequency
+    if (monthlyStats['count'] != null) {
+      final count = (monthlyStats['count'] as num?)?.toInt() ?? 0;
+      if (count > 0) {
+        final avgPerDay = (count / (endOfMonth.day)).toStringAsFixed(1);
+        insights.add(SmartInsight(
+          type: InsightType.info,
+          title: 'Kebiasaan Transaksi',
+          message: 'Rata-rata ${avgPerDay} transaksi per hari. Pertahankan pencatatan agar analisis makin akurat.',
+          priority: InsightPriority.low,
+          source: 'Sumber: Jumlah transaksi bulan berjalan',
+        ));
+      }
     }
 
     // Sort by priority
@@ -236,9 +282,32 @@ class SmartNotificationService {
 
   /// Schedule daily insights
   Future<void> scheduleDailyInsights() async {
-    // This would typically use a background task scheduler
-    // For now, we'll just show it can be called
-    await showDailyInsight();
+    if (!_isInitialized) await initialize();
+
+    // Fallback daily reminder (content not dynamic in background)
+    const androidDetails = AndroidNotificationDetails(
+      'daily_reminder',
+      'Daily Reminder',
+      channelDescription: 'Pengingat harian untuk cek catatan keuangan',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+    );
+    const iosDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(android: androidDetails, iOS: iosDetails);
+
+    await _notifications.periodicallyShow(
+      1001,
+      'Saatnya cek keuangan',
+      'Buka aplikasi untuk melihat insight terbaru.',
+      RepeatInterval.daily,
+      details,
+      androidAllowWhileIdle: true,
+    );
+  }
+
+  Future<void> cancelDailyInsights() async {
+    if (!_isInitialized) await initialize();
+    await _notifications.cancel(1001);
   }
 
   /// Get spending pattern analysis

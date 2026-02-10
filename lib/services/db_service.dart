@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:catatan_keuangan_pintar/services/builtin_categories.dart';
+import 'package:catatan_keuangan_pintar/services/auth_service.dart';
 
 // Models
 class Message {
@@ -123,9 +124,10 @@ class Category {
   final String name;
   final String type; // 'income'|'expense'|'saving'|'investment'
   final String keywords; // comma-separated keywords
+  final String? accountId; // Optional: link category to specific account/wallet (null = global)
   final DateTime createdAt;
 
-  Category({required this.id, required this.name, required this.type, this.keywords = '', required this.createdAt});
+  Category({required this.id, required this.name, required this.type, this.keywords = '', this.accountId, required this.createdAt});
 
   Map<String, Object?> toMap() {
     return {
@@ -133,6 +135,7 @@ class Category {
       'name': name,
       'type': type,
       'keywords': keywords,
+      'accountId': accountId,
       'createdAt': createdAt.millisecondsSinceEpoch,
     };
   }
@@ -143,6 +146,7 @@ class Category {
       name: m['name'] as String,
       type: m['type'] as String,
       keywords: (m['keywords'] as String?) ?? '',
+      accountId: m['accountId'] as String?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
     );
   }
@@ -159,6 +163,7 @@ class Account {
   final DateTime createdAt;
   final DateTime? deletedAt;
   final String scope; // 'personal'|'shared'
+  final String? groupId; // for group accounts
 
   Account({
     required this.id,
@@ -170,6 +175,7 @@ class Account {
     required this.createdAt,
     this.deletedAt,
     this.scope = 'personal',
+    this.groupId,
   });
 
   Map<String, Object?> toMap() {
@@ -183,6 +189,7 @@ class Account {
       'createdAt': createdAt.millisecondsSinceEpoch,
       'deletedAt': deletedAt?.millisecondsSinceEpoch,
       'scope': scope,
+      'groupId': groupId,
     };
   }
 
@@ -197,6 +204,7 @@ class Account {
       createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
       deletedAt: m['deletedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['deletedAt'] as int) : null,
       scope: (m['scope'] as String?) ?? 'personal',
+      groupId: m['groupId'] as String?,
     );
   }
 
@@ -210,6 +218,8 @@ class Account {
       color: color,
       createdAt: createdAt,
       deletedAt: deletedAt,
+      scope: scope,
+      groupId: groupId,
     );
   }
 }
@@ -227,6 +237,8 @@ class Goal {
   final DateTime createdAt;
   final DateTime? completedAt;
   final bool isActive;
+  final String scope; // 'personal' | 'group'
+  final String? groupId; // when scope is group
 
   Goal({
     required this.id,
@@ -240,6 +252,8 @@ class Goal {
     required this.createdAt,
     this.completedAt,
     this.isActive = true,
+    this.scope = 'personal',
+    this.groupId,
   });
 
   Map<String, Object?> toMap() {
@@ -255,6 +269,8 @@ class Goal {
       'createdAt': createdAt.millisecondsSinceEpoch,
       'completedAt': completedAt?.millisecondsSinceEpoch,
       'isActive': isActive ? 1 : 0,
+      'scope': scope,
+      'groupId': groupId,
     };
   }
 
@@ -271,12 +287,14 @@ class Goal {
       createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
       completedAt: m['completedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['completedAt'] as int) : null,
       isActive: (m['isActive'] as int?) == 1,
+      scope: (m['scope'] as String?) ?? 'personal',
+      groupId: m['groupId'] as String?,
     );
   }
 
   double get progressPercentage => targetAmount > 0 ? (currentAmount / targetAmount * 100).clamp(0, 100) : 0;
   
-  Goal copyWith({double? currentAmount, DateTime? completedAt, bool? isActive}) {
+  Goal copyWith({double? currentAmount, DateTime? completedAt, bool? isActive, String? scope, String? groupId}) {
     return Goal(
       id: id,
       name: name,
@@ -289,6 +307,8 @@ class Goal {
       createdAt: createdAt,
       completedAt: completedAt ?? this.completedAt,
       isActive: isActive ?? this.isActive,
+      scope: scope ?? this.scope,
+      groupId: groupId ?? this.groupId,
     );
   }
 }
@@ -339,17 +359,19 @@ class GroupMember {
   final String id;
   final String groupId;
   final String userId;
+  final String? email;
   final String role; // 'owner'|'admin'|'member'
   final String status; // 'invited'|'accepted'|'left'
   final DateTime? joinedAt;
 
-  GroupMember({required this.id, required this.groupId, required this.userId, this.role = 'member', this.status = 'invited', this.joinedAt});
+  GroupMember({required this.id, required this.groupId, required this.userId, this.email, this.role = 'member', this.status = 'invited', this.joinedAt});
 
   Map<String, Object?> toMap() {
     return {
       'id': id,
       'groupId': groupId,
       'userId': userId,
+      'email': email,
       'role': role,
       'status': status,
       'joinedAt': joinedAt?.millisecondsSinceEpoch,
@@ -361,6 +383,7 @@ class GroupMember {
       id: m['id'] as String,
       groupId: m['groupId'] as String,
       userId: m['userId'] as String,
+      email: m['email'] as String?,
       role: (m['role'] as String?) ?? 'member',
       status: (m['status'] as String?) ?? 'invited',
       joinedAt: m['joinedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['joinedAt'] as int) : null,
@@ -405,6 +428,195 @@ class GroupInvite {
   }
 }
 
+// Gold savings models
+class GoldType {
+  final String id;
+  final String name;
+  final double pricePerGram;
+  final String currency;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  final String? userId;
+  final String scope; // 'personal'|'group'
+  final String? groupId;
+  final DateTime? deletedAt;
+
+  GoldType({
+    required this.id,
+    required this.name,
+    required this.pricePerGram,
+    this.currency = 'IDR',
+    required this.createdAt,
+    this.updatedAt,
+    this.userId,
+    this.scope = 'personal',
+    this.groupId,
+    this.deletedAt,
+  });
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id,
+      'name': name,
+      'pricePerGram': pricePerGram,
+      'currency': currency,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'updatedAt': updatedAt?.millisecondsSinceEpoch,
+      'userId': userId,
+      'scope': scope,
+      'groupId': groupId,
+      'deletedAt': deletedAt?.millisecondsSinceEpoch,
+    };
+  }
+
+  static GoldType fromMap(Map<String, Object?> m) {
+    return GoldType(
+      id: m['id'] as String,
+      name: m['name'] as String,
+      pricePerGram: (m['pricePerGram'] as num?)?.toDouble() ?? 0.0,
+      currency: (m['currency'] as String?) ?? 'IDR',
+      createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
+      updatedAt: m['updatedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['updatedAt'] as int) : null,
+      userId: m['userId'] as String?,
+      scope: (m['scope'] as String?) ?? 'personal',
+      groupId: m['groupId'] as String?,
+      deletedAt: m['deletedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['deletedAt'] as int) : null,
+    );
+  }
+}
+
+class GoldHolding {
+  final String id;
+  final String typeId;
+  final double grams;
+  final double? purchasePrice; // Average purchase price per gram
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  final String? userId;
+  final String scope; // 'personal'|'group'
+  final String? groupId;
+  final DateTime? deletedAt;
+
+  GoldHolding({
+    required this.id,
+    required this.typeId,
+    required this.grams,
+    this.purchasePrice,
+    required this.createdAt,
+    this.updatedAt,
+    this.userId,
+    this.scope = 'personal',
+    this.groupId,
+    this.deletedAt,
+  });
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id,
+      'typeId': typeId,
+      'grams': grams,
+      'purchasePrice': purchasePrice,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'updatedAt': updatedAt?.millisecondsSinceEpoch,
+      'userId': userId,
+      'scope': scope,
+      'groupId': groupId,
+      'deletedAt': deletedAt?.millisecondsSinceEpoch,
+    };
+  }
+
+  static GoldHolding fromMap(Map<String, Object?> m) {
+    return GoldHolding(
+      id: m['id'] as String,
+      typeId: m['typeId'] as String,
+      grams: (m['grams'] as num?)?.toDouble() ?? 0.0,
+      purchasePrice: (m['purchasePrice'] as num?)?.toDouble(),
+      createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
+      updatedAt: m['updatedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['updatedAt'] as int) : null,
+      userId: m['userId'] as String?,
+      scope: (m['scope'] as String?) ?? 'personal',
+      groupId: m['groupId'] as String?,
+      deletedAt: m['deletedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['deletedAt'] as int) : null,
+    );
+  }
+}
+
+class GoldTransaction {
+  final String id;
+  final String typeId;
+  final String txType; // buy/sell/installment
+  final String mode; // physical/digital/installment
+  final double grams;
+  final double pricePerGram;
+  final double totalValue;
+  final DateTime date;
+  final String? note;
+  final DateTime createdAt;
+  final DateTime? updatedAt;
+  final String? userId;
+  final String scope; // 'personal'|'group'
+  final String? groupId;
+  final DateTime? deletedAt;
+
+  GoldTransaction({
+    required this.id,
+    required this.typeId,
+    required this.txType,
+    required this.mode,
+    required this.grams,
+    required this.pricePerGram,
+    required this.totalValue,
+    required this.date,
+    this.note,
+    required this.createdAt,
+    this.updatedAt,
+    this.userId,
+    this.scope = 'personal',
+    this.groupId,
+    this.deletedAt,
+  });
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id,
+      'typeId': typeId,
+      'txType': txType,
+      'mode': mode,
+      'grams': grams,
+      'pricePerGram': pricePerGram,
+      'totalValue': totalValue,
+      'date': date.millisecondsSinceEpoch,
+      'note': note,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'updatedAt': updatedAt?.millisecondsSinceEpoch,
+      'userId': userId,
+      'scope': scope,
+      'groupId': groupId,
+      'deletedAt': deletedAt?.millisecondsSinceEpoch,
+    };
+  }
+
+  static GoldTransaction fromMap(Map<String, Object?> m) {
+    return GoldTransaction(
+      id: m['id'] as String,
+      typeId: m['typeId'] as String,
+      txType: (m['txType'] as String?) ?? 'buy',
+      mode: (m['mode'] as String?) ?? 'physical',
+      grams: (m['grams'] as num?)?.toDouble() ?? 0.0,
+      pricePerGram: (m['pricePerGram'] as num?)?.toDouble() ?? 0.0,
+      totalValue: (m['totalValue'] as num?)?.toDouble() ?? 0.0,
+      date: DateTime.fromMillisecondsSinceEpoch(m['date'] as int),
+      note: m['note'] as String?,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(m['createdAt'] as int),
+      updatedAt: m['updatedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['updatedAt'] as int) : null,
+      userId: m['userId'] as String?,
+      scope: (m['scope'] as String?) ?? 'personal',
+      groupId: m['groupId'] as String?,
+      deletedAt: m['deletedAt'] != null ? DateTime.fromMillisecondsSinceEpoch(m['deletedAt'] as int) : null,
+    );
+  }
+}
+
 class DBService {
   DBService._privateConstructor();
   static final DBService instance = DBService._privateConstructor();
@@ -423,15 +635,19 @@ class DBService {
 
     return openDatabase(
       path,
-      version: 11,
+      version: 19, // Latest: v19 adds accountId to categories for wallet-specific categories
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
             id TEXT PRIMARY KEY,
             text TEXT,
             createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
             isSystem INTEGER DEFAULT 0,
-            groupId TEXT
+            groupId TEXT,
+            deletedAt INTEGER
           )
         ''');
 
@@ -445,6 +661,9 @@ class DBService {
             description TEXT,
             date INTEGER,
             createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
             isIncome INTEGER,
             type TEXT,
             accountId TEXT,
@@ -464,7 +683,11 @@ class DBService {
             name TEXT,
             type TEXT,
             keywords TEXT,
-            createdAt INTEGER
+            createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
+            deletedAt INTEGER
           )
         ''');
 
@@ -478,8 +701,12 @@ class DBService {
             balance REAL DEFAULT 0,
             color TEXT,
             createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
             deletedAt INTEGER,
-            scope TEXT DEFAULT 'personal'
+            scope TEXT DEFAULT 'personal',
+            groupId TEXT
           )
         ''');
 
@@ -495,8 +722,14 @@ class DBService {
             icon TEXT,
             color TEXT,
             createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
             completedAt INTEGER,
-            isActive INTEGER DEFAULT 1
+            isActive INTEGER DEFAULT 1,
+            scope TEXT DEFAULT 'personal',
+            groupId TEXT,
+            deletedAt INTEGER
           )
         ''');
 
@@ -508,7 +741,10 @@ class DBService {
             description TEXT,
             icon TEXT,
             createdAt INTEGER,
-            createdBy TEXT
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            createdBy TEXT,
+            deletedAt INTEGER
           )
         ''');
 
@@ -520,7 +756,11 @@ class DBService {
             userId TEXT,
             role TEXT DEFAULT 'member',
             status TEXT DEFAULT 'invited',
-            joinedAt INTEGER
+            joinedAt INTEGER,
+            createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            deletedAt INTEGER
           )
         ''');
 
@@ -533,7 +773,63 @@ class DBService {
             createdBy TEXT,
             createdAt INTEGER,
             expiresAt INTEGER,
-            usedAt INTEGER
+            usedAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1
+          )
+        ''');
+
+        // gold types (brand) table
+        await db.execute('''
+          CREATE TABLE gold_types (
+            id TEXT PRIMARY KEY,
+            name TEXT,
+            pricePerGram REAL,
+            currency TEXT,
+            createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
+            deletedAt INTEGER
+          )
+        ''');
+
+        // gold holdings summary per type
+        await db.execute('''
+          CREATE TABLE gold_holdings (
+            id TEXT PRIMARY KEY,
+            typeId TEXT,
+            grams REAL DEFAULT 0,
+            purchasePrice REAL,
+            createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
+            scope TEXT DEFAULT 'personal',
+            groupId TEXT,
+            deletedAt INTEGER
+          )
+        ''');
+
+        // gold transactions history
+        await db.execute('''
+          CREATE TABLE gold_transactions (
+            id TEXT PRIMARY KEY,
+            typeId TEXT,
+            txType TEXT, -- buy/sell/installment
+            mode TEXT, -- physical/digital/installment
+            grams REAL,
+            pricePerGram REAL,
+            totalValue REAL,
+            date INTEGER,
+            note TEXT,
+            createdAt INTEGER,
+            updatedAt INTEGER,
+            version INTEGER DEFAULT 1,
+            userId TEXT,
+            scope TEXT DEFAULT 'personal',
+            groupId TEXT,
+            deletedAt INTEGER
           )
         ''');
 
@@ -546,6 +842,9 @@ class DBService {
           'balance': 0,
           'color': '#4CAF50',
           'createdAt': DateTime.now().millisecondsSinceEpoch,
+          'updatedAt': DateTime.now().millisecondsSinceEpoch,
+          'version': 1,
+          'userId': 'local_user',
           'scope': 'personal',
         });
 
@@ -561,6 +860,9 @@ class DBService {
             'type': type,
             'keywords': kws,
             'createdAt': DateTime.now().millisecondsSinceEpoch,
+            'updatedAt': DateTime.now().millisecondsSinceEpoch,
+            'version': 1,
+            'userId': 'local_user',
           }, conflictAlgorithm: ConflictAlgorithm.ignore);
         }
        },
@@ -610,6 +912,70 @@ class DBService {
               }, conflictAlgorithm: ConflictAlgorithm.ignore);
             }
         }
+        if (oldVersion < 8) {
+          // Add new columns to transactions
+          try { await db.execute('ALTER TABLE transactions ADD COLUMN accountId TEXT'); } catch (_) {}
+          try { await db.execute('ALTER TABLE transactions ADD COLUMN goalId TEXT'); } catch (_) {}
+          try { await db.execute('ALTER TABLE transactions ADD COLUMN imageUrl TEXT'); } catch (_) {}
+          try { await db.execute('ALTER TABLE transactions ADD COLUMN voiceUrl TEXT'); } catch (_) {}
+          
+          // Add groupId to messages
+          try { await db.execute('ALTER TABLE messages ADD COLUMN groupId TEXT'); } catch (_) {}
+          
+          // Create new tables
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS accounts (
+              id TEXT PRIMARY KEY,
+              name TEXT,
+              type TEXT,
+              icon TEXT,
+              balance REAL DEFAULT 0,
+              color TEXT,
+              createdAt INTEGER,
+              deletedAt INTEGER
+            )
+          ''');
+
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS goals (
+              id TEXT PRIMARY KEY,
+              name TEXT,
+              description TEXT,
+              targetAmount REAL,
+              currentAmount REAL DEFAULT 0,
+              targetDate INTEGER,
+              icon TEXT,
+              color TEXT,
+              createdAt INTEGER,
+              completedAt INTEGER,
+              isActive INTEGER DEFAULT 1,
+              scope TEXT DEFAULT 'personal',
+              groupId TEXT
+            )
+          ''');
+
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS groups (
+              id TEXT PRIMARY KEY,
+              name TEXT,
+              description TEXT,
+              icon TEXT,
+              createdAt INTEGER,
+              createdBy TEXT
+            )
+          ''');
+
+          // Seed default cash account
+          await db.insert('accounts', {
+            'id': 'default_cash',
+            'name': 'Kas',
+            'type': 'cash',
+            'icon': '💵',
+            'balance': 0,
+            'color': '#4CAF50',
+            'createdAt': DateTime.now().millisecondsSinceEpoch,
+          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+        }
         if (oldVersion < 9) {
           // Add scope column to accounts and transactions to distinguish personal/shared
           try {
@@ -649,67 +1015,142 @@ class DBService {
             )
           ''');
         }
-        if (oldVersion < 8) {
-          // Add new columns to transactions
-          await db.execute('ALTER TABLE transactions ADD COLUMN accountId TEXT');
-          await db.execute('ALTER TABLE transactions ADD COLUMN goalId TEXT');
-          await db.execute('ALTER TABLE transactions ADD COLUMN imageUrl TEXT');
-          await db.execute('ALTER TABLE transactions ADD COLUMN voiceUrl TEXT');
-          
-          // Add groupId to messages
-          await db.execute('ALTER TABLE messages ADD COLUMN groupId TEXT');
-          
-          // Create new tables
-          await db.execute('''
-            CREATE TABLE IF NOT EXISTS accounts (
-              id TEXT PRIMARY KEY,
-              name TEXT,
-              type TEXT,
-              icon TEXT,
-              balance REAL DEFAULT 0,
-              color TEXT,
-              createdAt INTEGER,
-              deletedAt INTEGER
-            )
-          ''');
+        if (oldVersion < 12) {
+          // Add scope + groupId to goals
+          try {
+            await db.execute("ALTER TABLE goals ADD COLUMN scope TEXT DEFAULT 'personal'");
+          } catch (_) {}
+          try {
+            await db.execute('ALTER TABLE goals ADD COLUMN groupId TEXT');
+          } catch (_) {}
+        }
+        if (oldVersion < 13) {
+          // Add sync columns for offline-first sync
+          final cols = [
+            "ALTER TABLE messages ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE messages ADD COLUMN version INTEGER DEFAULT 1",
+            "ALTER TABLE messages ADD COLUMN userId TEXT",
+            "ALTER TABLE messages ADD COLUMN deletedAt INTEGER",
+            "ALTER TABLE transactions ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE transactions ADD COLUMN version INTEGER DEFAULT 1",
+            "ALTER TABLE transactions ADD COLUMN userId TEXT",
+            "ALTER TABLE categories ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE categories ADD COLUMN version INTEGER DEFAULT 1",
+            "ALTER TABLE categories ADD COLUMN userId TEXT",
+            "ALTER TABLE categories ADD COLUMN deletedAt INTEGER",
+            "ALTER TABLE accounts ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE accounts ADD COLUMN version INTEGER DEFAULT 1",
+            "ALTER TABLE accounts ADD COLUMN userId TEXT",
+            "ALTER TABLE goals ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE goals ADD COLUMN version INTEGER DEFAULT 1",
+            "ALTER TABLE goals ADD COLUMN userId TEXT",
+            "ALTER TABLE goals ADD COLUMN deletedAt INTEGER",
+            "ALTER TABLE groups ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE groups ADD COLUMN version INTEGER DEFAULT 1",
+            "ALTER TABLE groups ADD COLUMN deletedAt INTEGER",
+            "ALTER TABLE group_members ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE group_members ADD COLUMN version INTEGER DEFAULT 1",
+            "ALTER TABLE group_members ADD COLUMN deletedAt INTEGER",
+            "ALTER TABLE group_invites ADD COLUMN updatedAt INTEGER",
+            "ALTER TABLE group_invites ADD COLUMN version INTEGER DEFAULT 1"
+          ];
+          for (final sql in cols) {
+            try { await db.execute(sql); } catch (_) {}
+          }
 
-          await db.execute('''
-            CREATE TABLE IF NOT EXISTS goals (
-              id TEXT PRIMARY KEY,
-              name TEXT,
-              description TEXT,
-              targetAmount REAL,
-              currentAmount REAL DEFAULT 0,
-              targetDate INTEGER,
-              icon TEXT,
-              color TEXT,
-              createdAt INTEGER,
-              completedAt INTEGER,
-              isActive INTEGER DEFAULT 1
-            )
-          ''');
-
-          await db.execute('''
-            CREATE TABLE IF NOT EXISTS groups (
-              id TEXT PRIMARY KEY,
-              name TEXT,
-              description TEXT,
-              icon TEXT,
-              createdAt INTEGER,
-              createdBy TEXT
-            )
-          ''');
-
-          // Seed default cash account
-          await db.insert('accounts', {
-            'id': 'default_cash',
-            'name': 'Kas',
-            'type': 'cash',
-            'icon': '💵',
-            'balance': 0,
-            'color': '#4CAF50',
-            'createdAt': DateTime.now().millisecondsSinceEpoch,
-          }, conflictAlgorithm: ConflictAlgorithm.ignore);
+          final now = DateTime.now().millisecondsSinceEpoch;
+          try { await db.execute('UPDATE messages SET updatedAt = COALESCE(updatedAt, createdAt, ?)', [now]); } catch (_) {}
+          try { await db.execute('UPDATE transactions SET updatedAt = COALESCE(updatedAt, createdAt, ?)', [now]); } catch (_) {}
+          try { await db.execute('UPDATE categories SET updatedAt = COALESCE(updatedAt, createdAt, ?)', [now]); } catch (_) {}
+          try { await db.execute('UPDATE accounts SET updatedAt = COALESCE(updatedAt, createdAt, ?)', [now]); } catch (_) {}
+          try { await db.execute('UPDATE goals SET updatedAt = COALESCE(updatedAt, createdAt, ?)', [now]); } catch (_) {}
+          try { await db.execute('UPDATE groups SET updatedAt = COALESCE(updatedAt, createdAt, ?)', [now]); } catch (_) {}
+          try { await db.execute('UPDATE group_members SET updatedAt = COALESCE(updatedAt, joinedAt, ?)', [now]); } catch (_) {}
+          try { await db.execute('UPDATE group_invites SET updatedAt = COALESCE(updatedAt, createdAt, ?)', [now]); } catch (_) {}
+        }
+        if (oldVersion < 14) {
+          try {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS gold_types (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                pricePerGram REAL,
+                currency TEXT,
+                createdAt INTEGER,
+                updatedAt INTEGER,
+                version INTEGER DEFAULT 1,
+                userId TEXT,
+                deletedAt INTEGER
+              )
+            ''');
+          } catch (_) {}
+          try {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS gold_holdings (
+                id TEXT PRIMARY KEY,
+                typeId TEXT,
+                grams REAL DEFAULT 0,
+                purchasePrice REAL,
+                createdAt INTEGER,
+                updatedAt INTEGER,
+                version INTEGER DEFAULT 1,
+                userId TEXT,
+                scope TEXT DEFAULT 'personal',
+                groupId TEXT,
+                deletedAt INTEGER
+              )
+            ''');
+          } catch (_) {}
+          try {
+            await db.execute('''
+              CREATE TABLE IF NOT EXISTS gold_transactions (
+                id TEXT PRIMARY KEY,
+                typeId TEXT,
+                txType TEXT,
+                mode TEXT,
+                grams REAL,
+                pricePerGram REAL,
+                totalValue REAL,
+                date INTEGER,
+                note TEXT,
+                createdAt INTEGER,
+                updatedAt INTEGER,
+                version INTEGER DEFAULT 1,
+                userId TEXT,
+                scope TEXT DEFAULT 'personal',
+                groupId TEXT,
+                deletedAt INTEGER
+              )
+            ''');
+          } catch (_) {}
+        }
+        if (oldVersion < 15) {
+          // Add purchasePrice column to gold_holdings
+          try {
+            await db.execute("ALTER TABLE gold_holdings ADD COLUMN purchasePrice REAL");
+          } catch (_) {}
+        }
+        if (oldVersion < 16) {
+          // Add groupId column to accounts for group wallet support
+          try {
+            await db.execute("ALTER TABLE accounts ADD COLUMN groupId TEXT");
+          } catch (_) {}
+        }
+        if (oldVersion < 17) {
+          // Add createdAt column to group_members for sync compatibility
+          try {
+            await db.execute("ALTER TABLE group_members ADD COLUMN createdAt INTEGER");
+          } catch (_) {}
+        }
+        if (oldVersion < 18) {
+          try { await db.execute("ALTER TABLE gold_holdings ADD COLUMN scope TEXT DEFAULT 'personal'"); } catch (_) {}
+          try { await db.execute("ALTER TABLE gold_holdings ADD COLUMN groupId TEXT"); } catch (_) {}
+          try { await db.execute("ALTER TABLE gold_transactions ADD COLUMN scope TEXT DEFAULT 'personal'"); } catch (_) {}
+          try { await db.execute("ALTER TABLE gold_transactions ADD COLUMN groupId TEXT"); } catch (_) {}
+        }
+        if (oldVersion < 19) {
+          // Add accountId column to categories for wallet-specific categories
+          try { await db.execute("ALTER TABLE categories ADD COLUMN accountId TEXT"); } catch (_) {}
         }
        },
         onOpen: (db) async {
@@ -737,12 +1178,39 @@ class DBService {
 
   Future<void> insertMessage(Message message) async {
     final db = await database;
-    await db.insert('messages', message.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = message.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.insert('messages', map, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteMessage(String messageId) async {
+    final db = await database;
+    // Delete associated transactions first
+    await db.delete('transactions', where: 'messageId = ?', whereArgs: [messageId]);
+    // Delete the message
+    await db.delete('messages', where: 'id = ?', whereArgs: [messageId]);
+  }
+
+  Future<void> deleteTransaction(String transactionId) async {
+    final db = await database;
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    await db.rawUpdate(
+      'UPDATE transactions SET deletedAt = ?, updatedAt = ?, version = COALESCE(version, 0) + 1 WHERE id = ?',
+      [ts, ts, transactionId],
+    );
   }
 
   Future<void> insertTransaction(TransactionModel tx) async {
     final db = await database;
-    await db.insert('transactions', tx.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = tx.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.insert('transactions', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> deleteTransactionsSoft(List<String> ids) async {
@@ -750,7 +1218,7 @@ class DBService {
     final db = await database;
     final ts = DateTime.now().millisecondsSinceEpoch;
     final idsPlaceholders = ids.map((_) => '?').join(',');
-    await db.rawUpdate('UPDATE transactions SET deletedAt = ? WHERE id IN ($idsPlaceholders)', [ts, ...ids]);
+    await db.rawUpdate('UPDATE transactions SET deletedAt = ?, updatedAt = ?, version = COALESCE(version, 0) + 1 WHERE id IN ($idsPlaceholders)', [ts, ts, ...ids]);
   }
 
   // Helper to ensure queries exclude soft-deleted rows
@@ -954,20 +1422,44 @@ class DBService {
   }
 
   // Category CRUD
-  Future<List<Category>> getCategories() async {
+  Future<List<Category>> getCategories({String? accountId}) async {
     final db = await database;
-    final maps = await db.query('categories', orderBy: 'name ASC');
+    String whereClause = '';
+    List<dynamic> whereArgs = [];
+    
+    if (accountId != null) {
+      // Get categories for specific account OR global categories (accountId IS NULL)
+      whereClause = '(accountId = ? OR accountId IS NULL)';
+      whereArgs = [accountId];
+    }
+    
+    final maps = await db.query(
+      'categories', 
+      where: whereClause.isNotEmpty ? whereClause : null,
+      whereArgs: whereArgs.isNotEmpty ? whereArgs : null,
+      orderBy: 'name ASC'
+    );
     return maps.map((m) => Category.fromMap(m)).toList();
   }
 
   Future<void> insertCategory(Category c) async {
     final db = await database;
-    await db.insert('categories', c.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = c.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.insert('categories', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> updateCategory(Category c) async {
     final db = await database;
-    await db.update('categories', c.toMap(), where: 'id = ?', whereArgs: [c.id]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = c.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.update('categories', map, where: 'id = ?', whereArgs: [c.id]);
   }
 
   Future<void> deleteCategory(String id) async {
@@ -990,9 +1482,9 @@ class DBService {
     final lowerCat = (category ?? '').toLowerCase().trim();
     List<Map<String, Object?>> rows = [];
     if (lowerCat.isNotEmpty) {
-      rows = await db.rawQuery('SELECT description FROM transactions WHERE LOWER(COALESCE(category,'')) = ? AND deletedAt IS NULL', [lowerCat]);
+      rows = await db.rawQuery("SELECT description FROM transactions WHERE LOWER(COALESCE(category,'')) = ? AND deletedAt IS NULL", [lowerCat]);
       if (rows.isEmpty) {
-        rows = await db.rawQuery('SELECT description FROM transactions WHERE LOWER(COALESCE(description,'')) LIKE ? AND deletedAt IS NULL', ['%$lowerCat%']);
+        rows = await db.rawQuery("SELECT description FROM transactions WHERE LOWER(COALESCE(description,'')) LIKE ? AND deletedAt IS NULL", ['%$lowerCat%']);
       }
     } else {
       rows = await db.rawQuery('SELECT description FROM transactions WHERE deletedAt IS NULL');
@@ -1048,6 +1540,36 @@ class DBService {
     return maps.map((m) => Account.fromMap(m)).toList();
   }
 
+  // Get accounts including virtual savings accounts from goals
+  Future<List<Account>> getAccountsWithSavings({bool includeDeleted = false, String? groupId}) async {
+    final accounts = await getAccounts(includeDeleted: includeDeleted);
+    final scopedAccounts = accounts.where((acc) {
+      if (groupId == null) {
+        return acc.scope == 'personal' || acc.groupId == null;
+      }
+      if (groupId == 'all') return true;
+      return acc.scope == 'group' && acc.groupId == groupId;
+    }).toList();
+
+    // Add virtual accounts from savings goals
+    final goalScope = groupId == null ? 'personal' : (groupId == 'all' ? null : 'group');
+    final goals = await getGoals(activeOnly: true, groupId: groupId, scope: goalScope);
+    final savingsAccounts = goals.map((goal) {
+      return Account(
+        id: 'saving_${goal.id}',
+        name: 'Tabungan: ${goal.name}',
+        type: 'savings',
+        icon: '💰',
+        balance: goal.currentAmount,
+        color: '#4CAF50',
+        createdAt: goal.createdAt,
+        scope: goal.groupId == null ? 'personal' : 'group',
+      );
+    }).toList();
+
+    return [...scopedAccounts, ...savingsAccounts];
+  }
+
   Future<Account?> getAccount(String id) async {
     final db = await database;
     final maps = await db.query('accounts', where: 'id = ?', whereArgs: [id]);
@@ -1057,12 +1579,22 @@ class DBService {
 
   Future<void> insertAccount(Account account) async {
     final db = await database;
-    await db.insert('accounts', account.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = account.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.insert('accounts', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> updateAccount(Account account) async {
     final db = await database;
-    await db.update('accounts', account.toMap(), where: 'id = ?', whereArgs: [account.id]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = account.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.update('accounts', map, where: 'id = ?', whereArgs: [account.id]);
   }
 
   Future<void> deleteAccount(String id) async {
@@ -1072,14 +1604,34 @@ class DBService {
 
   Future<void> updateAccountBalance(String accountId, double newBalance) async {
     final db = await database;
-    await db.update('accounts', {'balance': newBalance}, where: 'id = ?', whereArgs: [accountId]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.rawUpdate('UPDATE accounts SET balance = ?, updatedAt = ?, version = COALESCE(version, 0) + 1 WHERE id = ?', [newBalance, now, accountId]);
   }
 
   // ============ GOAL CRUD ============
-  Future<List<Goal>> getGoals({bool activeOnly = true}) async {
+  Future<List<Goal>> getGoals({bool activeOnly = true, String? groupId, String? scope}) async {
     final db = await database;
-    final where = activeOnly ? 'isActive = 1' : null;
-    final maps = await db.query('goals', where: where, orderBy: 'createdAt DESC');
+    final whereClauses = <String>[];
+    final args = <Object?>[];
+    if (activeOnly) {
+      whereClauses.add('isActive = 1');
+    }
+    if (groupId != null) {
+      if (groupId == 'all') {
+        // no group filter
+      } else {
+        whereClauses.add('groupId = ?');
+        args.add(groupId);
+      }
+    } else {
+      whereClauses.add('groupId IS NULL');
+    }
+    if (scope != null) {
+      whereClauses.add('scope = ?');
+      args.add(scope);
+    }
+    final where = whereClauses.isEmpty ? null : whereClauses.join(' AND ');
+    final maps = await db.query('goals', where: where, whereArgs: args, orderBy: 'createdAt DESC');
     return maps.map((m) => Goal.fromMap(m)).toList();
   }
 
@@ -1092,39 +1644,59 @@ class DBService {
 
   Future<void> insertGoal(Goal goal) async {
     final db = await database;
-    await db.insert('goals', goal.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = goal.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.insert('goals', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void> updateGoal(Goal goal) async {
     final db = await database;
-    await db.update('goals', goal.toMap(), where: 'id = ?', whereArgs: [goal.id]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = goal.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.update('goals', map, where: 'id = ?', whereArgs: [goal.id]);
   }
 
   // ============ GROUP MEMBERSHIP & INVITES ==========
   Future<void> insertGroupMember(GroupMember m) async {
     final db = await database;
-    await db.insert('group_members', m.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = m.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    await db.insert('group_members', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<List<GroupMember>> getGroupMembers(String groupId) async {
     final db = await database;
-    final maps = await db.query('group_members', where: 'groupId = ?', whereArgs: [groupId], orderBy: "joinedAt DESC");
+    final maps = await db.query('group_members', where: 'groupId = ? AND deletedAt IS NULL', whereArgs: [groupId], orderBy: "joinedAt DESC");
     return maps.map((m) => GroupMember.fromMap(m)).toList();
   }
 
   Future<void> updateGroupMemberRole(String memberId, String role) async {
     final db = await database;
-    await db.update('group_members', {'role': role}, where: 'id = ?', whereArgs: [memberId]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.rawUpdate('UPDATE group_members SET role = ?, updatedAt = ?, version = COALESCE(version, 0) + 1 WHERE id = ?', [role, now, memberId]);
   }
 
   Future<void> removeGroupMember(String memberId) async {
     final db = await database;
-    await db.delete('group_members', where: 'id = ?', whereArgs: [memberId]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update('group_members', {'deletedAt': now, 'updatedAt': now}, where: 'id = ?', whereArgs: [memberId]);
   }
 
   Future<void> insertGroupInvite(GroupInvite invite) async {
     final db = await database;
-    await db.insert('group_invites', invite.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = invite.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    await db.insert('group_invites', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<GroupInvite?> getInviteByToken(String token) async {
@@ -1136,7 +1708,8 @@ class DBService {
 
   Future<void> markInviteUsed(String inviteId) async {
     final db = await database;
-    await db.update('group_invites', {'usedAt': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [inviteId]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.rawUpdate('UPDATE group_invites SET usedAt = ?, updatedAt = ?, version = COALESCE(version, 0) + 1 WHERE id = ?', [now, now, inviteId]);
   }
 
   Future<void> deleteInvite(String inviteId) async {
@@ -1146,7 +1719,8 @@ class DBService {
 
   Future<void> deleteGoal(String id) async {
     final db = await database;
-    await db.update('goals', {'isActive': 0}, where: 'id = ?', whereArgs: [id]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update('goals', {'isActive': 0, 'deletedAt': now, 'updatedAt': now}, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<void> updateGoalProgress(String goalId, double amount) async {
@@ -1162,13 +1736,155 @@ class DBService {
       updates['completedAt'] = DateTime.now().millisecondsSinceEpoch;
     }
     
+    final now = DateTime.now().millisecondsSinceEpoch;
+    updates['updatedAt'] = now;
     await db.update('goals', updates, where: 'id = ?', whereArgs: [goalId]);
+    await db.rawUpdate('UPDATE goals SET version = COALESCE(version, 0) + 1 WHERE id = ?', [goalId]);
+  }
+
+  // ============ GOLD SAVINGS ============
+  Future<List<GoldType>> getGoldTypes() async {
+    final db = await database;
+    final maps = await db.query('gold_types', where: 'deletedAt IS NULL', orderBy: 'createdAt DESC');
+    return maps.map((m) => GoldType.fromMap(m)).toList();
+  }
+
+  Future<void> insertGoldType(GoldType type) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = type.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.insert('gold_types', map, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> updateGoldType(GoldType type) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = type.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    await db.update('gold_types', map, where: 'id = ?', whereArgs: [type.id]);
+  }
+
+  Future<void> deleteGoldType(String id) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.update('gold_types', {'deletedAt': now, 'updatedAt': now}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<List<GoldHolding>> getGoldHoldings({String? groupId}) async {
+    final db = await database;
+    String where = 'deletedAt IS NULL';
+    final args = <Object?>[];
+    if (groupId == null) {
+      where += ' AND groupId IS NULL';
+    } else if (groupId != 'all') {
+      where += ' AND groupId = ?';
+      args.add(groupId);
+    }
+    final maps = await db.query('gold_holdings', where: where, whereArgs: args, orderBy: 'createdAt DESC');
+    return maps.map((m) => GoldHolding.fromMap(m)).toList();
+  }
+
+  Future<List<GoldTransaction>> getGoldTransactions({String? typeId, String? groupId}) async {
+    final db = await database;
+    final clauses = <String>['deletedAt IS NULL'];
+    final args = <Object?>[];
+    if (typeId != null) {
+      clauses.add('typeId = ?');
+      args.add(typeId);
+    }
+    if (groupId == null) {
+      clauses.add('groupId IS NULL');
+    } else if (groupId != 'all') {
+      clauses.add('groupId = ?');
+      args.add(groupId);
+    }
+    final where = clauses.join(' AND ');
+    final maps = await db.query('gold_transactions', where: where, whereArgs: args, orderBy: 'date DESC');
+    return maps.map((m) => GoldTransaction.fromMap(m)).toList();
+  }
+
+  Future<void> insertGoldTransaction(GoldTransaction tx) async {
+    final db = await database;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = tx.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    map['userId'] = map['userId'] ?? AuthService.instance.userId;
+    map['scope'] = map['scope'] ?? (tx.groupId == null ? 'personal' : 'group');
+    await db.insert('gold_transactions', map, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    // update holdings
+    String where = 'typeId = ? AND deletedAt IS NULL';
+    final args = <Object?>[tx.typeId];
+    if (tx.groupId == null) {
+      where += ' AND groupId IS NULL';
+    } else {
+      where += ' AND groupId = ?';
+      args.add(tx.groupId);
+    }
+    final existing = await db.query('gold_holdings', where: where, whereArgs: args, limit: 1);
+    double newGrams = tx.grams;
+    if (existing.isNotEmpty) {
+      final current = (existing.first['grams'] as num?)?.toDouble() ?? 0.0;
+      newGrams = tx.txType == 'sell' ? (current - tx.grams) : (current + tx.grams);
+      final holdingId = existing.first['id'] as String;
+      await db.rawUpdate(
+        'UPDATE gold_holdings SET grams = ?, updatedAt = ?, version = COALESCE(version,0)+1 WHERE id = ?',
+        [newGrams, now, holdingId],
+      );
+    } else {
+      final groupKey = tx.groupId ?? 'personal';
+      final holding = GoldHolding(
+        id: 'gh_${groupKey}_${tx.typeId}',
+        typeId: tx.typeId,
+        grams: tx.txType == 'sell' ? -tx.grams : tx.grams,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+        userId: AuthService.instance.userId,
+        scope: tx.groupId == null ? 'personal' : 'group',
+        groupId: tx.groupId,
+      );
+      await db.insert('gold_holdings', holding.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    }
+  }
+
+  Future<Map<String, double>> getGoldSummary({String? groupId}) async {
+    final db = await database;
+    String where = 'deletedAt IS NULL';
+    final args = <Object?>[];
+    if (groupId == null) {
+      where += ' AND groupId IS NULL';
+    } else if (groupId != 'all') {
+      where += ' AND groupId = ?';
+      args.add(groupId);
+    }
+    final holdings = await db.query('gold_holdings', where: where, whereArgs: args);
+    final types = await db.query('gold_types', where: 'deletedAt IS NULL');
+    final priceMap = <String, double>{};
+    for (final t in types) {
+      priceMap[t['id'] as String] = (t['pricePerGram'] as num?)?.toDouble() ?? 0.0;
+    }
+    double totalGrams = 0;
+    double totalValue = 0;
+    for (final h in holdings) {
+      final grams = (h['grams'] as num?)?.toDouble() ?? 0.0;
+      totalGrams += grams;
+      final typeId = h['typeId'] as String;
+      final price = priceMap[typeId] ?? 0.0;
+      totalValue += grams * price;
+    }
+    return {'grams': totalGrams, 'value': totalValue};
   }
 
   // ============ GROUP CRUD ============
   Future<List<Group>> getGroups() async {
     final db = await database;
-    final maps = await db.query('groups', orderBy: 'createdAt DESC');
+    final maps = await db.query('groups', where: 'deletedAt IS NULL', orderBy: 'createdAt DESC');
     return maps.map((m) => Group.fromMap(m)).toList();
   }
 
@@ -1181,24 +1897,37 @@ class DBService {
 
   Future<void> insertGroup(Group group) async {
     final db = await database;
-    await db.insert('groups', group.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = group.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    final createdBy = map['createdBy'] as String?;
+    if (createdBy == null || createdBy.isEmpty || createdBy == 'local_user' || createdBy == 'auto') {
+      map['createdBy'] = AuthService.instance.userId;
+    }
+    await db.insert('groups', map, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<void>updateGroup(Group group) async {
     final db = await database;
-    await db.update('groups', group.toMap(), where: 'id = ?', whereArgs: [group.id]);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final map = group.toMap();
+    map['updatedAt'] = now;
+    map['version'] = (map['version'] as int?) ?? 1;
+    await db.update('groups', map, where: 'id = ?', whereArgs: [group.id]);
   }
 
   Future<void> deleteGroup(String id) async {
     final db = await database;
     // Remove group membership and invites, and detach group from messages/transactions
     await db.transaction((txn) async {
-      await txn.delete('group_members', where: 'groupId = ?', whereArgs: [id]);
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await txn.update('group_members', {'deletedAt': now, 'updatedAt': now}, where: 'groupId = ?', whereArgs: [id]);
       await txn.delete('group_invites', where: 'groupId = ?', whereArgs: [id]);
       // detach messages and transactions (keep records but mark groupId NULL)
       await txn.update('messages', {'groupId': null}, where: 'groupId = ?', whereArgs: [id]);
       await txn.update('transactions', {'groupId': null}, where: 'groupId = ?', whereArgs: [id]);
-      await txn.delete('groups', where: 'id = ?', whereArgs: [id]);
+      await txn.update('groups', {'deletedAt': now, 'updatedAt': now}, where: 'id = ?', whereArgs: [id]);
     });
   }
 
@@ -1287,18 +2016,35 @@ class DBService {
       LIMIT 5
     ''', [startDate.millisecondsSinceEpoch, endDate.millisecondsSinceEpoch, ...extraArgs]);
     
-    // Account balances summary
+    // Account balances summary - filtered by wallet (group or personal)
     final accountsData = await getAccounts();
-    final totalBalance = accountsData.fold<double>(0, (sum, acc) => sum + acc.balance);
+    double totalBalance;
+    if (groupId != null && groupId != 'all') {
+      // Group wallet: only include accounts belonging to this group
+      totalBalance = accountsData
+          .where((acc) => acc.scope == 'group' && acc.groupId == groupId)
+          .fold<double>(0, (sum, acc) => sum + acc.balance);
+    } else if (groupId == null) {
+      // Personal wallet: only include personal accounts (or group accounts without groupId)
+      totalBalance = accountsData
+          .where((acc) => acc.scope == 'personal' || acc.groupId == null)
+          .fold<double>(0, (sum, acc) => sum + acc.balance);
+    } else {
+      // All wallets
+      totalBalance = accountsData.fold<double>(0, (sum, acc) => sum + acc.balance);
+    }
     
     // Active goals progress
-    final goalsData = await getGoals(activeOnly: true);
+    final goalsData = await getGoals(activeOnly: true, groupId: groupId, scope: scope);
     final goalsProgress = goalsData.map((g) => {
       'name': g.name,
       'progress': g.progressPercentage,
       'current': g.currentAmount,
       'target': g.targetAmount,
     }).toList();
+
+    // Gold summary
+    final goldSummary = await getGoldSummary(groupId: groupId);
     
     return {
       'income': totals['income'],
@@ -1312,6 +2058,7 @@ class DBService {
       'accountCount': accountsData.length,
       'goalsProgress': goalsProgress,
       'activeGoalsCount': goalsData.length,
+      'goldSummary': goldSummary,
     };
   }
 
