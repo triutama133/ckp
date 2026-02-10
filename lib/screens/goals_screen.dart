@@ -12,13 +12,18 @@ class GoalsScreen extends HookWidget {
     final uuid = const Uuid();
     final nf = NumberFormat('#,##0', 'id');
     final goals = useState<List<Goal>>([]);
+    final groups = useState<List<Group>>([]);
+    final selectedGroupId = useState<String?>(null);
     final isLoading = useState(true);
     final showCompleted = useState(false);
 
     Future<void> loadGoals() async {
       isLoading.value = true;
       try {
-        final data = await DBService.instance.getGoals(activeOnly: !showCompleted.value);
+        final data = await DBService.instance.getGoals(
+          activeOnly: !showCompleted.value,
+          groupId: selectedGroupId.value,
+        );
         goals.value = data;
       } catch (e) {
         if (context.mounted) {
@@ -32,8 +37,14 @@ class GoalsScreen extends HookWidget {
 
     useEffect(() {
       loadGoals();
+      () async {
+        try {
+          final gs = await DBService.instance.getGroups();
+          groups.value = gs;
+        } catch (_) {}
+      }();
       return null;
-    }, [showCompleted.value]);
+    }, [showCompleted.value, selectedGroupId.value]);
 
     Future<void> _showGoalEditor({Goal? goal}) async {
       final nameCtrl = TextEditingController(text: goal?.name ?? '');
@@ -45,6 +56,7 @@ class GoalsScreen extends HookWidget {
       String selectedIcon = goal?.icon ?? '🎯';
       String selectedColor = goal?.color ?? '#2196F3';
       DateTime? targetDate = goal?.targetDate;
+      String? goalGroupId = goal?.groupId ?? selectedGroupId.value;
 
       final icons = ['🎯', '🕌', '✈️', '🏠', '🚗', '🎓', '💍', '🏥', '💰', '🌟'];
       final colors = [
@@ -89,6 +101,29 @@ class GoalsScreen extends HookWidget {
                     ),
                     keyboardType: TextInputType.number,
                   ),
+                  if (groups.value.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Text('Target Untuk', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String?>(
+                          value: goalGroupId,
+                          isExpanded: true,
+                          items: [
+                            const DropdownMenuItem(value: null, child: Text('Personal')),
+                            ...groups.value.map((g) => DropdownMenuItem(value: g.id, child: Text('Grup: ${g.name}'))),
+                          ],
+                          onChanged: (value) => setState(() => goalGroupId = value),
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   const Text('Pilih Icon:', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
@@ -156,6 +191,17 @@ class GoalsScreen extends HookWidget {
                           initialDate: targetDate ?? DateTime.now().add(const Duration(days: 365)),
                           firstDate: DateTime.now(),
                           lastDate: DateTime.now().add(const Duration(days: 3650)),
+                          locale: const Locale('id'),
+                          builder: (ctx, child) {
+                            return Theme(
+                              data: Theme.of(ctx).copyWith(
+                                datePickerTheme: const DatePickerThemeData(
+                                  headerHelpStyle: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              child: child!,
+                            );
+                          },
                         );
                         if (picked != null) {
                           setState(() => targetDate = picked);
@@ -202,6 +248,8 @@ class GoalsScreen extends HookWidget {
           color: selectedColor,
           createdAt: goal?.createdAt ?? DateTime.now(),
           isActive: goal?.isActive ?? true,
+          scope: goalGroupId == null ? 'personal' : 'group',
+          groupId: goalGroupId,
         );
 
         if (goal == null) {
@@ -289,190 +337,241 @@ class GoalsScreen extends HookWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Target Keuangan'),
-        actions: [
-          IconButton(
-            icon: Icon(showCompleted.value ? Icons.visibility_off : Icons.visibility),
-            onPressed: () => showCompleted.value = !showCompleted.value,
-            tooltip: showCompleted.value ? 'Sembunyikan Selesai' : 'Tampilkan Selesai',
-          ),
-        ],
       ),
       body: isLoading.value
           ? const Center(child: CircularProgressIndicator())
-          : goals.value.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
                     children: [
-                      Icon(Icons.flag, size: 64, color: Colors.grey.shade300),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Belum ada target',
-                        style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Buat target pertama Anda!',
-                        style: TextStyle(color: Colors.grey.shade500),
-                      ),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: loadGoals,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: goals.value.length,
-                    itemBuilder: (context, index) {
-                      final goal = goals.value[index];
-                      final color = Color(
-                        int.parse((goal.color ?? '#2196F3').substring(1), radix: 16) + 0xFF000000,
-                      );
-                      final progress = goal.progressPercentage;
-                      final isCompleted = goal.completedAt != null;
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: InkWell(
-                          onTap: () => _showGoalEditor(goal: goal),
-                          borderRadius: BorderRadius.circular(16),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      width: 50,
-                                      height: 50,
-                                      decoration: BoxDecoration(
-                                        color: color.withValues(alpha: 0.2),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Center(
-                                        child: Text(
-                                          goal.icon ?? '🎯',
-                                          style: const TextStyle(fontSize: 28),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  goal.name,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 16,
-                                                  ),
-                                                ),
-                                              ),
-                                              if (isCompleted)
-                                                const Icon(
-                                                  Icons.check_circle,
-                                                  color: Colors.green,
-                                                  size: 20,
-                                                ),
-                                            ],
-                                          ),
-                                          if (goal.description != null)
-                                            Text(
-                                              goal.description!,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.grey.shade600,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                    Text(
-                                      '${progress.toStringAsFixed(0)}%',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 18,
-                                        color: color,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: LinearProgressIndicator(
-                                    value: progress / 100,
-                                    minHeight: 10,
-                                    backgroundColor: Colors.grey.shade200,
-                                    valueColor: AlwaysStoppedAnimation<Color>(color),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Rp ${nf.format(goal.currentAmount)}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: color,
-                                      ),
-                                    ),
-                                    Text(
-                                      'Target: Rp ${nf.format(goal.targetAmount)}',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (goal.targetDate != null)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      'Target: ${DateFormat('dd MMM yyyy').format(goal.targetDate!)}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade500,
-                                      ),
-                                    ),
-                                  ),
-                                if (!isCompleted) ...[
-                                  const SizedBox(height: 12),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    child: ElevatedButton.icon(
-                                      onPressed: () => _contributeToGoal(goal),
-                                      icon: const Icon(Icons.add, size: 18),
-                                      label: const Text('Setor'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: color,
-                                        foregroundColor: Colors.white,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.grey.shade300),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String?>(
+                              value: selectedGroupId.value,
+                              isExpanded: true,
+                              items: [
+                                const DropdownMenuItem(value: null, child: Text('Target Personal')),
+                                ...groups.value.map((g) => DropdownMenuItem(value: g.id, child: Text('Target Grup: ${g.name}'))),
                               ],
+                              onChanged: (v) => selectedGroupId.value = v,
                             ),
                           ),
                         ),
-                      );
-                    },
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: Icon(showCompleted.value ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () => showCompleted.value = !showCompleted.value,
+                        tooltip: showCompleted.value ? 'Sembunyikan Selesai' : 'Tampilkan Selesai',
+                      ),
+                    ],
                   ),
                 ),
+                Expanded(
+                  child: goals.value.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.flag, size: 64, color: Colors.grey.shade300),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Belum ada target',
+                                style: TextStyle(fontSize: 18, color: Colors.grey.shade600),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Buat target pertama Anda!',
+                                style: TextStyle(color: Colors.grey.shade500),
+                              ),
+                            ],
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: loadGoals,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: goals.value.length,
+                            itemBuilder: (context, index) {
+                              final goal = goals.value[index];
+                              final color = Color(
+                                int.parse((goal.color ?? '#2196F3').substring(1), radix: 16) + 0xFF000000,
+                              );
+                              final progress = goal.progressPercentage;
+                              final isCompleted = goal.completedAt != null;
+
+                              String scopeLabel = 'Personal';
+                              if (goal.groupId != null) {
+                                String? groupName;
+                                for (final g in groups.value) {
+                                  if (g.id == goal.groupId) {
+                                    groupName = g.name;
+                                    break;
+                                  }
+                                }
+                                scopeLabel = 'Grup${groupName != null ? ': $groupName' : ''}';
+                              }
+
+                              return Card(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                elevation: 2,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: InkWell(
+                                  onTap: () => _showGoalEditor(goal: goal),
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Container(
+                                              width: 50,
+                                              height: 50,
+                                              decoration: BoxDecoration(
+                                                color: color.withValues(alpha: 0.2),
+                                                borderRadius: BorderRadius.circular(12),
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  goal.icon ?? '🎯',
+                                                  style: const TextStyle(fontSize: 28),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Text(
+                                                          goal.name,
+                                                          style: const TextStyle(
+                                                            fontWeight: FontWeight.bold,
+                                                            fontSize: 16,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                      if (isCompleted)
+                                                        const Icon(
+                                                          Icons.check_circle,
+                                                          color: Colors.green,
+                                                          size: 20,
+                                                        ),
+                                                    ],
+                                                  ),
+                                                  Text(
+                                                    scopeLabel,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.grey.shade500,
+                                                    ),
+                                                  ),
+                                                  if (goal.description != null)
+                                                    Text(
+                                                      goal.description!,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: Colors.grey.shade600,
+                                                      ),
+                                                    ),
+                                                ],
+                                              ),
+                                            ),
+                                            Text(
+                                              '${progress.toStringAsFixed(0)}%',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 18,
+                                                color: color,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 12),
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(8),
+                                          child: LinearProgressIndicator(
+                                            value: progress / 100,
+                                            minHeight: 10,
+                                            backgroundColor: Colors.grey.shade200,
+                                            valueColor: AlwaysStoppedAnimation<Color>(color),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              'Rp ${nf.format(goal.currentAmount)}',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                color: color,
+                                              ),
+                                            ),
+                                            Text(
+                                              'Target: Rp ${nf.format(goal.targetAmount)}',
+                                              style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (goal.targetDate != null)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              'Target: ${DateFormat('dd MMM yyyy').format(goal.targetDate!)}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey.shade500,
+                                              ),
+                                            ),
+                                          ),
+                                        if (!isCompleted) ...[
+                                          const SizedBox(height: 12),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            child: ElevatedButton.icon(
+                                              onPressed: () => _contributeToGoal(goal),
+                                              icon: const Icon(Icons.add, size: 18),
+                                              label: const Text('Setor'),
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor: color,
+                                                foregroundColor: Colors.white,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                ),
+              ],
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showGoalEditor(),
         icon: const Icon(Icons.add),

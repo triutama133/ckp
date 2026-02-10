@@ -96,12 +96,7 @@ class OCRService {
           if (line.contains(keyword)) {
             final amountMatch = amountPattern.firstMatch(originalLine);
             if (amountMatch != null) {
-              final amountStr = amountMatch.group(1)!.replaceAll(RegExp(r'[.,]'), '');
-              totalAmount = double.tryParse(amountStr);
-              if (totalAmount != null && totalAmount > 100) {
-                // Adjust for decimal places
-                totalAmount = totalAmount / 100;
-              }
+              totalAmount = _parseAmountText(amountMatch.group(1)!);
               break;
             }
           }
@@ -113,13 +108,8 @@ class OCRService {
         final amountMatch = amountPattern.firstMatch(originalLine);
         if (amountMatch != null) {
           final itemName = originalLine.substring(0, amountMatch.start).trim();
-          final amountStr = amountMatch.group(1)!.replaceAll(RegExp(r'[.,]'), '');
-          var amount = double.tryParse(amountStr);
-          
+          final amount = _parseAmountText(amountMatch.group(1)!);
           if (amount != null && itemName.isNotEmpty) {
-            if (amount > 100) {
-              amount = amount / 100;
-            }
             items.add(ReceiptItem(name: itemName, price: amount));
           }
         }
@@ -136,10 +126,9 @@ class OCRService {
       for (final line in lines.reversed) {
         final match = amountPattern.firstMatch(line);
         if (match != null) {
-          final amountStr = match.group(1)!.replaceAll(RegExp(r'[.,]'), '');
-          var amount = double.tryParse(amountStr);
+          final amount = _parseAmountText(match.group(1)!);
           if (amount != null && amount > 1000) {
-            totalAmount = amount / 100;
+            totalAmount = amount;
             break;
           }
         }
@@ -165,6 +154,23 @@ class OCRService {
     final hasText = RegExp(r'[a-zA-Z]{2,}').hasMatch(line);
     final hasNumber = RegExp(r'\d{3,}').hasMatch(line);
     return hasText && hasNumber;
+  }
+
+  double? _parseAmountText(String raw) {
+    final cleaned = raw.trim();
+    if (cleaned.isEmpty) return null;
+    final hasComma = cleaned.contains(',');
+    final hasDot = cleaned.contains('.');
+    if (hasComma || hasDot) {
+      final lastSep = cleaned.lastIndexOf(hasComma ? ',' : '.');
+      final frac = cleaned.substring(lastSep + 1);
+      if (frac.length == 2) {
+        final withoutThousands = cleaned.substring(0, lastSep).replaceAll(RegExp(r'[.,]'), '');
+        return double.tryParse('$withoutThousands.${frac}');
+      }
+    }
+    final digits = cleaned.replaceAll(RegExp(r'[.,]'), '');
+    return double.tryParse(digits);
   }
 
   void dispose() {

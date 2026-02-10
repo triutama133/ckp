@@ -72,6 +72,13 @@ dependencies:
   supabase_flutter: ^2.3.4
   google_sign_in: ^6.2.1
   
+  # Push Notifications
+  firebase_core: ^3.1.0
+  firebase_messaging: ^15.0.0
+
+  # Connectivity
+  connectivity_plus: ^6.0.5
+  
   # Environment variables
   flutter_dotenv: ^5.1.0
 

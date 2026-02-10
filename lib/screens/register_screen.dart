@@ -52,16 +52,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       );
 
       if (mounted) {
-        // Show success message
+        // Email verification disabled - langsung ke home
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Registrasi berhasil! Silakan cek email untuk verifikasi.'),
+            content: Text('Registrasi berhasil! Selamat datang!'),
             backgroundColor: Colors.green,
-            duration: Duration(seconds: 4),
           ),
         );
-
-        // Navigate to home (or login screen if email verification required)
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(builder: (_) => const HomeScreen()),
         );
@@ -111,8 +108,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   String _getErrorMessage(String error) {
-    if (error.contains('User already registered')) {
-      return 'Email sudah terdaftar. Silakan login';
+    if (error.contains('User already registered') || error.contains('already been registered')) {
+      return 'Email sudah terdaftar. Silakan login atau reset password';
     } else if (error.contains('Password should be at least')) {
       return 'Password minimal 6 karakter';
     } else if (error.contains('network')) {

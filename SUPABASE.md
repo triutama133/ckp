@@ -48,3 +48,11 @@ B) Use `flutter_dotenv` and a `.env` file (recommended for local development)
   `group_invites` if you want remote persistence. You can create simple SQL
   migrations from `tools/server/db.sql` (the repo contains a VPS scaffold).
 
+6) Push notifications (optional)
+
+- Create table `device_tokens` and store FCM tokens per user.
+- Deploy Edge Function `send_push` in `supabase/functions/send_push`.
+- Set env vars on Supabase:
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+  - `FCM_SERVER_KEY`

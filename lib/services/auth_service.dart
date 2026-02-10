@@ -46,13 +46,28 @@ class AuthService {
         email: email,
         password: password,
         data: fullName != null ? {'full_name': fullName} : null,
+        emailRedirectTo: null, // For web redirect after verification
       );
 
       if (response.user != null) {
         await _saveUserIdLocally(response.user!.id);
+        // Create a row in the public.users table so sync/queries work
+        await _ensureUserProfile(response.user!.id, email, fullName);
       }
 
       return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Resend email confirmation
+  Future<void> resendEmailConfirmation(String email) async {
+    try {
+      await _supabase.auth.resend(
+        type: OtpType.signup,
+        email: email,
+      );
     } catch (e) {
       rethrow;
     }
@@ -71,6 +86,8 @@ class AuthService {
 
       if (response.user != null) {
         await _saveUserIdLocally(response.user!.id);
+        // Ensure public.users row exists (in case signup happened before we added this)
+        await _ensureUserProfile(response.user!.id, email, null);
       }
 
       return response;
@@ -110,6 +127,12 @@ class AuthService {
 
       if (response.user != null) {
         await _saveUserIdLocally(response.user!.id);
+        // Ensure public.users row exists for Google sign-in too
+        await _ensureUserProfile(
+          response.user!.id,
+          response.user!.email,
+          response.user!.userMetadata?['full_name'] as String?,
+        );
       }
 
       return response;
@@ -167,6 +190,18 @@ class AuthService {
     }
   }
 
+  /// Update email (Supabase will send confirmation if enabled)
+  Future<UserResponse> updateEmail(String email) async {
+    try {
+      final response = await _supabase.auth.updateUser(
+        UserAttributes(email: email),
+      );
+      return response;
+    } catch (e) {
+      rethrow;
+    }
+  }
+
   /// Save user ID to local storage for offline usage
   Future<void> _saveUserIdLocally(String userId) async {
     try {
@@ -175,6 +210,22 @@ class AuthService {
     } catch (e) {
       // Non-critical error, just log
       print('Failed to save user ID locally: $e');
+    }
+  }
+
+  /// Ensure user profile row exists in public.users table
+  Future<void> _ensureUserProfile(String userId, String? email, String? fullName) async {
+    try {
+      // Upsert so it works for both new signups and existing users
+      await _supabase.from('users').upsert({
+        'id': userId,
+        'email': email,
+        'full_name': fullName,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, onConflict: 'id');
+    } catch (e) {
+      // Non-critical: don't block auth flow
+      print('Failed to ensure user profile: $e');
     }
   }
 

@@ -6,6 +6,10 @@ import 'dart:ui' as ui;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:catatan_keuangan_pintar/screens/splash_screen.dart';
 import 'package:catatan_keuangan_pintar/services/supabase_init.dart';
+import 'package:catatan_keuangan_pintar/services/push_service.dart';
+import 'package:catatan_keuangan_pintar/services/notification_service.dart';
+import 'package:catatan_keuangan_pintar/services/auto_sync_service.dart';
+import 'package:firebase_core/firebase_core.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,6 +36,16 @@ Future<void> main() async {
 
   // Initialize Supabase with credentials from .env
   await initSupabase();
+  
+  // Initialize Firebase (required for push notifications)
+  await Firebase.initializeApp();
+  await PushService.instance.initialize();
+  
+  // Initialize local smart notification service (insights & scheduling)
+  await SmartNotificationService.instance.initialize();
+  
+  // Initialize auto-sync service (offline-first with cloud backup)
+  await AutoSyncService.instance.initialize();
   
   runApp(const MyApp());
 }

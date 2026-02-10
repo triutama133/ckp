@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "399711082826",
+    "project_id": "smart-finance-tracker-9cbb7",
+    "storage_bucket": "smart-finance-tracker-9cbb7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:399711082826:android:a2dee5010f43991c6e49b3",
+        "android_client_info": {
+          "package_name": "com.example.ckp_temp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBw79D58oWYQgwEmpnb3MvG_1Q1tuyu5qY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

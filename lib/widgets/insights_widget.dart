@@ -26,7 +26,7 @@ class InsightsWidget extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        ...insights.take(3).map((insight) => _InsightCard(insight: insight)),
+        ...insights.take(4).map((insight) => _InsightCard(insight: insight)),
       ],
     );
   }

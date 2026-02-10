@@ -1,13 +1,20 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
 import 'package:catatan_keuangan_pintar/screens/categories_screen.dart';
 import 'package:catatan_keuangan_pintar/screens/chat_screen.dart';
 import 'package:catatan_keuangan_pintar/screens/dashboard_screen.dart';
 import 'package:catatan_keuangan_pintar/screens/goals_screen.dart';
 import 'package:catatan_keuangan_pintar/screens/accounts_screen.dart';
 import 'package:catatan_keuangan_pintar/screens/manual_transaction_screen.dart';
+import 'package:catatan_keuangan_pintar/screens/notifications_screen.dart';
 import 'package:catatan_keuangan_pintar/screens/settings_screen.dart';
+import 'package:catatan_keuangan_pintar/screens/sync_settings_screen.dart';
+import 'package:catatan_keuangan_pintar/screens/transaction_history_screen.dart';
+import 'package:catatan_keuangan_pintar/screens/gold_savings_screen.dart';
 import 'package:catatan_keuangan_pintar/services/auth_service.dart';
 import 'package:catatan_keuangan_pintar/screens/login_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:catatan_keuangan_pintar/services/sync_service.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
@@ -22,11 +29,26 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selected = 0; // 0 dashboard, 1 chat, 2 manual, 3 more
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
 
   @override
   void initState() {
     super.initState();
     _ensureRulesLoaded();
+    SyncService.instance.startAutoSyncFromPrefs();
+    _connSub = Connectivity().onConnectivityChanged.listen((results) async {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (online) {
+        try { await SyncService.instance.syncAll(); } catch (_) {}
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    SyncService.instance.stopAutoSync();
+    _connSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _ensureRulesLoaded() async {
@@ -95,13 +117,53 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 12),
         _MenuCard(
+          icon: Icons.receipt_long,
+          title: 'Riwayat Transaksi',
+          subtitle: 'Lihat & edit data bulanan',
+          color: Colors.indigo,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TransactionHistoryScreen()),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _MenuCard(
+          icon: Icons.star,
+          title: 'Tabungan Emas',
+          subtitle: 'Kelola emas fisik & cicilan',
+          color: Colors.amber,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const GoldSavingsScreen()),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _MenuCard(
           icon: Icons.notifications,
           title: 'Notifikasi',
           subtitle: 'Pengingat & saran pintar',
           color: Colors.red,
           onTap: () {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Coming soon!')),
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+            );
+          },
+        ),
+        const SizedBox(height: 12),
+        _MenuCard(
+          icon: Icons.sync,
+          title: 'Sinkronisasi',
+          subtitle: 'Atur konflik & sync data',
+          color: Colors.teal,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SyncSettingsScreen()),
             );
           },
         ),
@@ -109,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
         _MenuCard(
           icon: Icons.settings,
           title: 'Pengaturan',
-          subtitle: 'Preferences & backup',
+          subtitle: 'Pengaturan akun',
           color: Colors.grey,
           onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen()));
@@ -296,7 +358,12 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
     
     return Scaffold(
-      body: SafeArea(child: pages[_selected]),
+      body: SafeArea(
+        child: IndexedStack(
+          index: _selected,
+          children: pages,
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selected,
         onDestinationSelected: (index) => setState(() => _selected = index),
@@ -393,4 +460,3 @@ class _MenuCard extends StatelessWidget {
     );
   }
 }
-
