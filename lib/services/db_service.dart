@@ -635,7 +635,7 @@ class DBService {
 
     return openDatabase(
       path,
-      version: 19,
+      version: 19, // Latest: v19 adds accountId to categories for wallet-specific categories
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE messages (
